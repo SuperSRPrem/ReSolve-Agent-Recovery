@@ -1,0 +1,458 @@
+[
+  {
+    "incidentId": "INC-1247",
+    "title": "Payments API latency after deployment",
+    "service": "payments-api",
+    "environment": "production",
+    "severity": "P1",
+    "date": "2026-05-14",
+    "softwareVersion": "4.2",
+    "symptoms": [
+      "Payments API latency above 4 seconds",
+      "Database CPU above 95%",
+      "HTTP 503 responses"
+    ],
+    "errorCodes": [
+      "HTTP-503"
+    ],
+    "metrics": {
+      "apiLatencyMs": 4400,
+      "databaseCpuPercent": 96
+    },
+    "recentChange": {
+      "type": "deployment",
+      "description": "Payments service deployment v4.2",
+      "minutesBeforeIncident": 7
+    },
+    "actionsTried": [
+      {
+        "action": "Restart read replica",
+        "result": "failed"
+      }
+    ],
+    "rootCause": "A database query introduced in deployment v4.2 caused excessive CPU usage.",
+    "resolution": {
+      "action": "Rollback recent deployment",
+      "steps": [
+        "Rollback payments service from v4.2 to previous stable version",
+        "Monitor database CPU",
+        "Verify API latency returns to normal"
+      ],
+      "result": "success",
+      "resolutionTimeMinutes": 18
+    },
+    "resolutionStats": {
+      "successCount": 4,
+      "failureCount": 0
+    },
+    "resolutionStatus": "active"
+  },
+  {
+    "incidentId": "INC-1183",
+    "title": "Payments API slowdown caused by traffic spike",
+    "service": "payments-api",
+    "environment": "production",
+    "severity": "P1",
+    "date": "2026-03-21",
+    "softwareVersion": "4.0",
+    "symptoms": [
+      "Payments API latency above 3 seconds",
+      "Database CPU above 90%",
+      "Sudden increase in transaction volume"
+    ],
+    "errorCodes": [],
+    "metrics": {
+      "apiLatencyMs": 3600,
+      "databaseCpuPercent": 93
+    },
+    "recentChange": {
+      "type": "none",
+      "description": "No recent deployment or configuration change",
+      "minutesBeforeIncident": null
+    },
+    "actionsTried": [],
+    "rootCause": "Unexpected transaction volume exhausted available database capacity.",
+    "resolution": {
+      "action": "Scale database read replicas",
+      "steps": [
+        "Add two read replicas",
+        "Redistribute read traffic",
+        "Monitor API latency"
+      ],
+      "result": "success",
+      "resolutionTimeMinutes": 14
+    },
+    "resolutionStats": {
+      "successCount": 6,
+      "failureCount": 1
+    },
+    "resolutionStatus": "active"
+  },
+  {
+    "incidentId": "INC-1310",
+    "title": "Payment failures after Redis cache exhaustion",
+    "service": "payments-api",
+    "environment": "production",
+    "severity": "P2",
+    "date": "2026-06-02",
+    "softwareVersion": "4.3",
+    "symptoms": [
+      "Intermittent payment failures",
+      "High cache memory usage",
+      "Increased API response time"
+    ],
+    "errorCodes": [
+      "CACHE-TIMEOUT"
+    ],
+    "metrics": {
+      "apiLatencyMs": 2100,
+      "databaseCpuPercent": 61
+    },
+    "recentChange": {
+      "type": "none",
+      "description": "No recent deployment",
+      "minutesBeforeIncident": null
+    },
+    "actionsTried": [
+      {
+        "action": "Restart API workers",
+        "result": "failed"
+      }
+    ],
+    "rootCause": "Redis cache reached its configured memory limit and began evicting critical session data.",
+    "resolution": {
+      "action": "Flush stale cache entries and increase Redis memory limit",
+      "steps": [
+        "Remove stale cache entries",
+        "Increase Redis memory allocation",
+        "Restart affected workers",
+        "Verify payment success rate"
+      ],
+      "result": "success",
+      "resolutionTimeMinutes": 22
+    },
+    "resolutionStats": {
+      "successCount": 3,
+      "failureCount": 0
+    },
+    "resolutionStatus": "active"
+  },
+  {
+    "incidentId": "INC-1392",
+    "title": "Database replica failure causing payment latency",
+    "service": "payments-db",
+    "environment": "production",
+    "severity": "P1",
+    "date": "2026-06-28",
+    "softwareVersion": "4.4",
+    "symptoms": [
+      "Payments API latency above 5 seconds",
+      "Database replication lag",
+      "Read requests timing out"
+    ],
+    "errorCodes": [
+      "DB-REPLICA-TIMEOUT"
+    ],
+    "metrics": {
+      "apiLatencyMs": 5200,
+      "databaseCpuPercent": 72
+    },
+    "recentChange": {
+      "type": "none",
+      "description": "No application deployment",
+      "minutesBeforeIncident": null
+    },
+    "actionsTried": [],
+    "rootCause": "One database read replica became unhealthy and continued receiving traffic.",
+    "resolution": {
+      "action": "Remove unhealthy replica and provision replacement",
+      "steps": [
+        "Remove unhealthy replica from load balancer",
+        "Provision replacement replica",
+        "Wait for replication synchronization",
+        "Restore read traffic"
+      ],
+      "result": "success",
+      "resolutionTimeMinutes": 31
+    },
+    "resolutionStats": {
+      "successCount": 7,
+      "failureCount": 0
+    },
+    "resolutionStatus": "active"
+  },
+  {
+    "incidentId": "INC-1421",
+    "title": "Connection pool exhaustion after configuration change",
+    "service": "payments-api",
+    "environment": "production",
+    "severity": "P1",
+    "date": "2026-07-04",
+    "softwareVersion": "4.5",
+    "symptoms": [
+      "Payments API requests timing out",
+      "Database connections unavailable",
+      "Application workers waiting for connections"
+    ],
+    "errorCodes": [
+      "DB-CONNECTION-TIMEOUT"
+    ],
+    "metrics": {
+      "apiLatencyMs": 6100,
+      "databaseCpuPercent": 58
+    },
+    "recentChange": {
+      "type": "configuration",
+      "description": "Database connection pool settings changed",
+      "minutesBeforeIncident": 15
+    },
+    "actionsTried": [
+      {
+        "action": "Restart database",
+        "result": "failed"
+      }
+    ],
+    "rootCause": "Incorrect connection pool limits prevented workers from obtaining database connections.",
+    "resolution": {
+      "action": "Restore previous connection pool configuration",
+      "steps": [
+        "Restore previous connection pool values",
+        "Restart application workers",
+        "Monitor active database connections"
+      ],
+      "result": "success",
+      "resolutionTimeMinutes": 17
+    },
+    "resolutionStats": {
+      "successCount": 4,
+      "failureCount": 0
+    },
+    "resolutionStatus": "active"
+  },
+  {
+    "incidentId": "INC-1458",
+    "title": "HTTP 503 errors caused by unhealthy API workers",
+    "service": "payments-api",
+    "environment": "production",
+    "severity": "P2",
+    "date": "2026-07-11",
+    "softwareVersion": "4.5",
+    "symptoms": [
+      "HTTP 503 responses",
+      "Several API workers marked unhealthy",
+      "Normal database CPU"
+    ],
+    "errorCodes": [
+      "HTTP-503"
+    ],
+    "metrics": {
+      "apiLatencyMs": 1700,
+      "databaseCpuPercent": 48
+    },
+    "recentChange": {
+      "type": "none",
+      "description": "No recent application deployment",
+      "minutesBeforeIncident": null
+    },
+    "actionsTried": [],
+    "rootCause": "Multiple API workers entered an unhealthy state after an internal dependency timeout.",
+    "resolution": {
+      "action": "Restart unhealthy API workers",
+      "steps": [
+        "Remove unhealthy workers from load balancer",
+        "Restart affected workers",
+        "Run health checks",
+        "Restore workers to load balancer"
+      ],
+      "result": "success",
+      "resolutionTimeMinutes": 9
+    },
+    "resolutionStats": {
+      "successCount": 8,
+      "failureCount": 2
+    },
+    "resolutionStatus": "active"
+  },
+  {
+    "incidentId": "INC-1493",
+    "title": "Database CPU saturation after reporting query",
+    "service": "payments-db",
+    "environment": "production",
+    "severity": "P2",
+    "date": "2026-07-19",
+    "softwareVersion": "4.6",
+    "symptoms": [
+      "Database CPU above 90%",
+      "Payments API latency increased",
+      "Long-running database query detected"
+    ],
+    "errorCodes": [],
+    "metrics": {
+      "apiLatencyMs": 2800,
+      "databaseCpuPercent": 97
+    },
+    "recentChange": {
+      "type": "none",
+      "description": "No recent deployment",
+      "minutesBeforeIncident": null
+    },
+    "actionsTried": [
+      {
+        "action": "Scale read replicas",
+        "result": "failed"
+      }
+    ],
+    "rootCause": "An analytics reporting query performed a full table scan against the production payments database.",
+    "resolution": {
+      "action": "Terminate long-running reporting query",
+      "steps": [
+        "Identify query consuming highest CPU",
+        "Terminate reporting query",
+        "Verify database CPU decreases",
+        "Move reporting workload to analytics replica"
+      ],
+      "result": "success",
+      "resolutionTimeMinutes": 11
+    },
+    "resolutionStats": {
+      "successCount": 3,
+      "failureCount": 0
+    },
+    "resolutionStatus": "active"
+  },
+  {
+    "incidentId": "INC-1517",
+    "title": "Legacy payment service memory leak",
+    "service": "payments-api",
+    "environment": "production",
+    "severity": "P2",
+    "date": "2026-07-25",
+    "softwareVersion": "3.8",
+    "symptoms": [
+      "Gradually increasing memory usage",
+      "API workers crashing",
+      "Intermittent HTTP 503 responses"
+    ],
+    "errorCodes": [
+      "OUT-OF-MEMORY",
+      "HTTP-503"
+    ],
+    "metrics": {
+      "apiLatencyMs": 1900,
+      "databaseCpuPercent": 45
+    },
+    "recentChange": {
+      "type": "none",
+      "description": "Legacy service version",
+      "minutesBeforeIncident": null
+    },
+    "actionsTried": [],
+    "rootCause": "Memory leak in legacy payment service version 3.8.",
+    "resolution": {
+      "action": "Restart payment workers every two hours",
+      "steps": [
+        "Restart affected worker processes",
+        "Schedule recurring worker restart"
+      ],
+      "result": "success",
+      "resolutionTimeMinutes": 8
+    },
+    "resolutionStats": {
+      "successCount": 12,
+      "failureCount": 7
+    },
+    "resolutionStatus": "deprecated"
+  },
+  {
+    "incidentId": "INC-1544",
+    "title": "Payment authorization failures after certificate rotation",
+    "service": "payment-gateway",
+    "environment": "production",
+    "severity": "P1",
+    "date": "2026-08-03",
+    "softwareVersion": "4.6",
+    "symptoms": [
+      "Payment authorization requests failing",
+      "TLS handshake errors",
+      "External payment gateway unreachable"
+    ],
+    "errorCodes": [
+      "TLS-HANDSHAKE-FAILED"
+    ],
+    "metrics": {
+      "apiLatencyMs": 900,
+      "databaseCpuPercent": 42
+    },
+    "recentChange": {
+      "type": "configuration",
+      "description": "TLS certificate rotation",
+      "minutesBeforeIncident": 12
+    },
+    "actionsTried": [
+      {
+        "action": "Restart API workers",
+        "result": "failed"
+      }
+    ],
+    "rootCause": "Payment gateway workers were still using the previous certificate bundle.",
+    "resolution": {
+      "action": "Reload updated certificate bundle",
+      "steps": [
+        "Verify new certificate",
+        "Reload gateway certificate bundle",
+        "Restart payment gateway workers",
+        "Verify TLS connection"
+      ],
+      "result": "success",
+      "resolutionTimeMinutes": 13
+    },
+    "resolutionStats": {
+      "successCount": 2,
+      "failureCount": 0
+    },
+    "resolutionStatus": "active"
+  },
+  {
+    "incidentId": "INC-1582",
+    "title": "Payments latency after application release",
+    "service": "payments-api",
+    "environment": "staging",
+    "severity": "P2",
+    "date": "2026-08-12",
+    "softwareVersion": "4.7-rc1",
+    "symptoms": [
+      "Payments API latency above 4 seconds",
+      "Database CPU above 90%",
+      "Latency began immediately after deployment"
+    ],
+    "errorCodes": [
+      "HTTP-503"
+    ],
+    "metrics": {
+      "apiLatencyMs": 4100,
+      "databaseCpuPercent": 92
+    },
+    "recentChange": {
+      "type": "deployment",
+      "description": "Payments service release candidate v4.7-rc1",
+      "minutesBeforeIncident": 5
+    },
+    "actionsTried": [],
+    "rootCause": "Release candidate introduced inefficient database access during payment validation.",
+    "resolution": {
+      "action": "Rollback recent deployment",
+      "steps": [
+        "Rollback v4.7-rc1",
+        "Restore previous staging release",
+        "Verify database CPU and API latency"
+      ],
+      "result": "success",
+      "resolutionTimeMinutes": 12
+    },
+    "resolutionStats": {
+      "successCount": 1,
+      "failureCount": 0
+    },
+    "resolutionStatus": "active"
+  }
+]
