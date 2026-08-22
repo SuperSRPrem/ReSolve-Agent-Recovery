@@ -176,8 +176,16 @@
       "resolutionTimeMinutes": 31
     },
     "resolutionStats": {
-      "successCount": 7,
-      "failureCount": 0
+      "overall": {
+        "successCount": 8,
+        "failureCount": 0
+      },
+      "conditioned": {
+        "DB_CONNECTION_TIMEOUT": {
+          "successCount": 1,
+          "failureCount": 0
+        }
+      }
     },
     "resolutionStatus": "active"
   },

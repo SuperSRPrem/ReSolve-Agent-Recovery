@@ -1,39 +1,54 @@
 from backend.retriever import IncidentRetriever
+from backend.outcome_tracker import OutcomeTracker, computeErrorSignature
+
+
+RISK_SCORES = {
+    "low": 1.0,
+    "medium": 0.6,
+    "high": 0.2
+}
+
+
+def getRiskTier(action):
+    """
+    PLACEHOLDER - real risk tagging is build-order step 4, not built yet.
+    Everything currently returns "low", so riskScore contributes a flat
+    0.15 to every strategy's score right now and isn't discriminating
+    anything. Swap the inside of this function, not the formula, once
+    step 4 lands.
+    """
+    return "low"
 
 
 class RecoveryMemory:
     def __init__(self, minScore=0.5):
         self.retriever = IncidentRetriever()
+        self.outcomeTracker = OutcomeTracker(self.retriever.store)
         self.minScore = minScore
 
-    def getFailedActions(self, incident):
-        failedActions = []
+    def getFailedActions(self, attemptHistory):
+        return [
+            attempt["action"].lower()
+            for attempt in attemptHistory
+            if attempt.get("result") == "failed"
+        ]
 
-        for item in incident.get("actionsTried", []):
-            if item.get("result") == "failed":
-                action = item.get("action", "").lower()
-                failedActions.append(action)
+    def getRecovery(self, currentIncident, attemptHistory=None, limit=5):
+        """
+        attemptHistory: explicit list of {"action", "result", ...} dicts
+        for this incident run so far - not read off currentIncident. This
+        is the "incident state + attempt history, not just the incident
+        record" separation: the current incident describes the problem,
+        attemptHistory describes what's already been tried and failed
+        during this specific recovery run.
+        """
+        attemptHistory = attemptHistory or []
 
-        return failedActions
-
-    def getSuccessRate(self, incident):
-        stats = incident.get("resolutionStats", {})
-
-        success = stats.get("successCount", 0)
-        failure = stats.get("failureCount", 0)
-
-        total = success + failure
-
-        if total == 0:
-            return 0
-
-        return success / total
-
-    def getRecovery(self, currentIncident, limit=5):
         results = self.retriever.getSimilarIncidents(currentIncident, limit)
-        failedActions = self.getFailedActions(currentIncident)
+        failedActions = self.getFailedActions(attemptHistory)
+        errorSignature = computeErrorSignature(currentIncident)
 
-        choices = []
+        strategies = []
 
         for result in results:
             incident = result["incident"]
@@ -51,35 +66,48 @@ class RecoveryMemory:
             if action.lower() in failedActions:
                 continue
 
-            successRate = self.getSuccessRate(incident)
+            successRate, isConditioned = self.outcomeTracker.getSuccessRate(
+                incident, errorSignature
+            )
 
-            score = (similarity * 0.8) + (successRate * 0.2)
+            riskTier = getRiskTier(action)
+            riskScore = RISK_SCORES.get(riskTier, 0.6)
 
-            choice = {
+            score = (
+                (similarity * 0.45) +
+                (successRate * 0.40) +
+                (riskScore * 0.15)
+            )
+
+            strategy = {
                 "incidentId": incident["incidentId"],
                 "title": incident["title"],
                 "similarity": similarity,
                 "successRate": successRate,
+                "successRateIsConditioned": isConditioned,
+                "riskTier": riskTier,
                 "score": score,
                 "action": action,
                 "steps": resolution.get("steps", []),
                 "rootCause": incident.get("rootCause", "")
             }
 
-            choices.append(choice)
+            strategies.append(strategy)
 
-        choices.sort(key=lambda item: item["score"], reverse=True)
+        strategies.sort(key=lambda item: item["score"], reverse=True)
 
-        if len(choices) == 0:
+        if len(strategies) == 0:
             return {
                 "status": "NO_MATCH",
                 "message": "No reliable recovery was found.",
-                "choices": []
+                "errorSignature": errorSignature,
+                "strategies": []
             }
 
         return {
             "status": "MATCH_FOUND",
             "message": "Recovery options found.",
-            "bestChoice": choices[0],
-            "choices": choices
+            "errorSignature": errorSignature,
+            "bestChoice": strategies[0],
+            "choices": strategies
         }
