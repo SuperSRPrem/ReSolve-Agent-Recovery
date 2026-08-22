@@ -2,3 +2,5 @@ streamlit
 numpy
 sentence-transformers
 langchain-text-splitters
+mcp
+uv
