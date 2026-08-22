@@ -1,23 +1,6 @@
 from backend.retriever import IncidentRetriever
 from backend.outcome_tracker import OutcomeTracker, computeErrorSignature
-
-
-RISK_SCORES = {
-    "low": 1.0,
-    "medium": 0.6,
-    "high": 0.2
-}
-
-
-def getRiskTier(action):
-    """
-    PLACEHOLDER - real risk tagging is build-order step 4, not built yet.
-    Everything currently returns "low", so riskScore contributes a flat
-    0.15 to every strategy's score right now and isn't discriminating
-    anything. Swap the inside of this function, not the formula, once
-    step 4 lands.
-    """
-    return "low"
+from backend.risk_tiering import RiskTierer
 
 
 class RecoveryMemory:
@@ -27,6 +10,13 @@ class RecoveryMemory:
         self.minScore = minScore
 
     def getFailedActions(self, attemptHistory):
+        """
+        Returns actions that have already failed during
+        the current recovery run.
+
+        These actions will not be selected again for Plan B.
+        """
+
         return [
             attempt["action"].lower()
             for attempt in attemptHistory
@@ -35,17 +25,27 @@ class RecoveryMemory:
 
     def getRecovery(self, currentIncident, attemptHistory=None, limit=5):
         """
-        attemptHistory: explicit list of {"action", "result", ...} dicts
-        for this incident run so far - not read off currentIncident. This
-        is the "incident state + attempt history, not just the incident
-        record" separation: the current incident describes the problem,
-        attemptHistory describes what's already been tried and failed
-        during this specific recovery run.
+        Finds and ranks recovery strategies.
+
+        Ranking formula:
+
+        45% -> similarity to current incident
+        40% -> historical success rate conditioned on error signature
+        15% -> risk score
+
+        attemptHistory contains actions already attempted during
+        this recovery run.
         """
+
         attemptHistory = attemptHistory or []
 
-        results = self.retriever.getSimilarIncidents(currentIncident, limit)
+        results = self.retriever.getSimilarIncidents(
+            currentIncident,
+            limit
+        )
+
         failedActions = self.getFailedActions(attemptHistory)
+
         errorSignature = computeErrorSignature(currentIncident)
 
         strategies = []
@@ -61,22 +61,31 @@ class RecoveryMemory:
                 continue
 
             resolution = incident.get("resolution", {})
+
             action = resolution.get("action", "")
+
+            if not action:
+                continue
 
             if action.lower() in failedActions:
                 continue
 
-            successRate, isConditioned = self.outcomeTracker.getSuccessRate(
-                incident, errorSignature
+            successRate, isConditioned = (
+                self.outcomeTracker.getSuccessRate(
+                    incident,
+                    errorSignature
+                )
             )
 
-            riskTier = getRiskTier(action)
-            riskScore = RISK_SCORES.get(riskTier, 0.6)
+            risk = RiskTierer.classify(action)
+
+            riskTier = risk["riskTier"]
+            riskScore = risk["riskScore"]
 
             score = (
-                (similarity * 0.45) +
-                (successRate * 0.40) +
-                (riskScore * 0.15)
+                (similarity * 0.45)
+                + (successRate * 0.40)
+                + (riskScore * 0.15)
             )
 
             strategy = {
@@ -86,22 +95,26 @@ class RecoveryMemory:
                 "successRate": successRate,
                 "successRateIsConditioned": isConditioned,
                 "riskTier": riskTier,
+                "riskScore": riskScore,
                 "score": score,
                 "action": action,
                 "steps": resolution.get("steps", []),
-                "rootCause": incident.get("rootCause", "")
+                "rootCause": incident.get("rootCause", ""),
             }
 
             strategies.append(strategy)
 
-        strategies.sort(key=lambda item: item["score"], reverse=True)
+        strategies.sort(
+            key=lambda item: item["score"],
+            reverse=True
+        )
 
         if len(strategies) == 0:
             return {
                 "status": "NO_MATCH",
                 "message": "No reliable recovery was found.",
                 "errorSignature": errorSignature,
-                "strategies": []
+                "strategies": [],
             }
 
         return {
@@ -109,5 +122,5 @@ class RecoveryMemory:
             "message": "Recovery options found.",
             "errorSignature": errorSignature,
             "bestChoice": strategies[0],
-            "choices": strategies
+            "choices": strategies,
         }
