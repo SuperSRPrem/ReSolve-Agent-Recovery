@@ -1,9 +1,14 @@
+import numpy as np
 from sentence_transformers import SentenceTransformer
+
+from backend.chunking import chunkText
 
 
 class IncidentEmbedder:
-    def __init__(self):
+    def __init__(self, chunkSize=300, chunkOverlap=50):
         self.model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        self.chunkSize = chunkSize
+        self.chunkOverlap = chunkOverlap
 
     def makeIncidentText(self, incident):
         symptoms = ", ".join(incident.get("symptoms", []))
@@ -53,23 +58,30 @@ class IncidentEmbedder:
 
         return text
 
+    def embedChunks(self, chunks):
+        vectors = self.model.encode(
+            chunks,
+            normalize_embeddings=True
+        )
+
+        pooled = np.mean(vectors, axis=0)
+
+        norm = np.linalg.norm(pooled)
+        if norm > 0:
+            pooled = pooled / norm
+
+        return pooled
+
     def embedIncidents(self, incidents):
-        texts = []
+        embeddings = []
 
         for incident in incidents:
-            texts.append(self.makeIncidentText(incident))
+            text = self.makeIncidentText(incident)
+            chunks = chunkText(text, self.chunkSize, self.chunkOverlap)
+            embeddings.append(self.embedChunks(chunks))
 
-        embeddings = self.model.encode(
-            texts,
-            normalize_embeddings=True
-        )
-
-        return embeddings
+        return np.array(embeddings)
 
     def embedText(self, text):
-        embedding = self.model.encode(
-            text,
-            normalize_embeddings=True
-        )
-
-        return embedding
+        chunks = chunkText(text, self.chunkSize, self.chunkOverlap)
+        return self.embedChunks(chunks)
