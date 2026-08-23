@@ -6,35 +6,65 @@ from backend.risk_tiering import RiskTierer
 class RecoveryMemory:
     def __init__(self, minScore=0.5):
         self.retriever = IncidentRetriever()
-        self.outcomeTracker = OutcomeTracker(self.retriever.store)
+        self.outcomeTracker = OutcomeTracker(
+            self.retriever.store
+        )
         self.minScore = minScore
 
-    def getFailedActions(self, attemptHistory):
+    def getUnavailableActions(self, attemptHistory):
         """
-        Returns actions that have already failed during
-        the current recovery run.
+        Returns actions that should not be selected again
+        during the current recovery run.
 
-        These actions will not be selected again for Plan B.
+        This includes actions that:
+
+        - failed verification
+        - were rejected by a human
+        - are already waiting for approval
+
+        This prevents the recovery loop from repeatedly
+        suggesting the same strategy.
         """
 
-        return [
-            attempt["action"].lower()
-            for attempt in attemptHistory
-            if attempt.get("result") == "failed"
-        ]
+        unavailableResults = {
+            "failed",
+            "rejected",
+            "pending-approval"
+        }
 
-    def getRecovery(self, currentIncident, attemptHistory=None, limit=5):
+        unavailableActions = set()
+
+        for attempt in attemptHistory:
+            result = attempt.get("result")
+
+            if result in unavailableResults:
+                action = attempt.get("action", "")
+
+                if action:
+                    unavailableActions.add(
+                        action.lower().strip()
+                    )
+
+        return unavailableActions
+
+    def getRecovery(
+        self,
+        currentIncident,
+        attemptHistory=None,
+        limit=5
+    ):
         """
         Finds and ranks recovery strategies.
 
         Ranking formula:
 
         45% -> similarity to current incident
-        40% -> historical success rate conditioned on error signature
-        15% -> risk score
+        40% -> historical success rate conditioned
+               on the error signature
+        15% -> safety / risk score
 
-        attemptHistory contains actions already attempted during
-        this recovery run.
+        Actions that have already failed or been rejected
+        during this recovery session are excluded.
         """
 
         attemptHistory = attemptHistory or []
@@ -44,9 +74,13 @@ class RecoveryMemory:
             limit
         )
 
-        failedActions = self.getFailedActions(attemptHistory)
+        unavailableActions = self.getUnavailableActions(
+            attemptHistory
+        )
 
-        errorSignature = computeErrorSignature(currentIncident)
+        errorSignature = computeErrorSignature(
+            currentIncident
+        )
 
         strategies = []
 
@@ -54,30 +88,48 @@ class RecoveryMemory:
             incident = result["incident"]
             similarity = result["score"]
 
+            # Ignore weak matches.
             if similarity < self.minScore:
                 continue
 
-            if incident.get("resolutionStatus") == "deprecated":
+            # Do not use deprecated historical resolutions.
+            if (
+                incident.get("resolutionStatus")
+                == "deprecated"
+            ):
                 continue
 
-            resolution = incident.get("resolution", {})
+            resolution = incident.get(
+                "resolution",
+                {}
+            )
 
-            action = resolution.get("action", "")
+            action = resolution.get(
+                "action",
+                ""
+            )
 
             if not action:
                 continue
 
-            if action.lower() in failedActions:
+            normalizedAction = action.lower().strip()
+
+            # Never retry an action that already failed,
+            # was rejected, or is already pending.
+            if normalizedAction in unavailableActions:
                 continue
 
-            successRate, isConditioned = (
-                self.outcomeTracker.getSuccessRate(
-                    incident,
-                    errorSignature
-                )
+            (
+                successRate,
+                isConditioned
+            ) = self.outcomeTracker.getSuccessRate(
+                incident,
+                errorSignature
             )
 
-            risk = RiskTierer.classify(action)
+            risk = RiskTierer.classify(
+                action
+            )
 
             riskTier = risk["riskTier"]
             riskScore = risk["riskScore"]
@@ -89,17 +141,27 @@ class RecoveryMemory:
             )
 
             strategy = {
-                "incidentId": incident["incidentId"],
+                "incidentId": incident[
+                    "incidentId"
+                ],
                 "title": incident["title"],
                 "similarity": similarity,
                 "successRate": successRate,
-                "successRateIsConditioned": isConditioned,
+                "successRateIsConditioned": (
+                    isConditioned
+                ),
                 "riskTier": riskTier,
                 "riskScore": riskScore,
                 "score": score,
                 "action": action,
-                "steps": resolution.get("steps", []),
-                "rootCause": incident.get("rootCause", ""),
+                "steps": resolution.get(
+                    "steps",
+                    []
+                ),
+                "rootCause": incident.get(
+                    "rootCause",
+                    ""
+                ),
             }
 
             strategies.append(strategy)
@@ -109,17 +171,22 @@ class RecoveryMemory:
             reverse=True
         )
 
-        if len(strategies) == 0:
+        if not strategies:
             return {
                 "status": "NO_MATCH",
-                "message": "No reliable recovery was found.",
+                "message": (
+                    "No reliable untried recovery "
+                    "strategy was found."
+                ),
                 "errorSignature": errorSignature,
                 "strategies": [],
             }
 
         return {
             "status": "MATCH_FOUND",
-            "message": "Recovery options found.",
+            "message": (
+                "Recovery options found."
+            ),
             "errorSignature": errorSignature,
             "bestChoice": strategies[0],
             "choices": strategies,

@@ -132,8 +132,16 @@
       "resolutionTimeMinutes": 22
     },
     "resolutionStats": {
-      "successCount": 3,
-      "failureCount": 0
+      "overall": {
+        "successCount": 3,
+        "failureCount": 1
+      },
+      "conditioned": {
+        "CONNECTION_REFUSED": {
+          "successCount": 0,
+          "failureCount": 1
+        }
+      }
     },
     "resolutionStatus": "active"
   },
@@ -178,12 +186,16 @@
     "resolutionStats": {
       "overall": {
         "successCount": 8,
-        "failureCount": 0
+        "failureCount": 1
       },
       "conditioned": {
         "DB_CONNECTION_TIMEOUT": {
           "successCount": 1,
           "failureCount": 0
+        },
+        "CONNECTION_REFUSED": {
+          "successCount": 0,
+          "failureCount": 1
         }
       }
     },
@@ -232,8 +244,16 @@
       "resolutionTimeMinutes": 17
     },
     "resolutionStats": {
-      "successCount": 4,
-      "failureCount": 0
+      "overall": {
+        "successCount": 8,
+        "failureCount": 1
+      },
+      "conditioned": {
+        "CONNECTION_REFUSED": {
+          "successCount": 4,
+          "failureCount": 1
+        }
+      }
     },
     "resolutionStatus": "active"
   },
@@ -276,8 +296,16 @@
       "resolutionTimeMinutes": 9
     },
     "resolutionStats": {
-      "successCount": 8,
-      "failureCount": 2
+      "overall": {
+        "successCount": 8,
+        "failureCount": 3
+      },
+      "conditioned": {
+        "CONNECTION_REFUSED": {
+          "successCount": 0,
+          "failureCount": 1
+        }
+      }
     },
     "resolutionStatus": "active"
   },
@@ -323,8 +351,16 @@
       "resolutionTimeMinutes": 11
     },
     "resolutionStats": {
-      "successCount": 3,
-      "failureCount": 0
+      "overall": {
+        "successCount": 3,
+        "failureCount": 1
+      },
+      "conditioned": {
+        "CONNECTION_REFUSED": {
+          "successCount": 0,
+          "failureCount": 1
+        }
+      }
     },
     "resolutionStatus": "active"
   },

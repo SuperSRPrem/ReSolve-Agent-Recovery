@@ -1,24 +1,223 @@
+import re
+
 from backend.incident_store import IncidentStore
 
 
-DEFAULT_STATS = {"successCount": 0, "failureCount": 0}
+DEFAULT_STATS = {
+    "successCount": 0,
+    "failureCount": 0
+}
+
+
+def normalizeSignature(value):
+    """
+    Converts different textual representations of the same error
+    into a consistent signature.
+
+    Examples:
+
+    "Connection refused"
+        -> CONNECTION_REFUSED
+
+    "database connection refused"
+        -> DATABASE_CONNECTION_REFUSED
+    """
+
+    if not value:
+        return ""
+
+    value = str(value).strip().upper()
+
+    value = re.sub(r"[^A-Z0-9]+", "_", value)
+
+    value = re.sub(r"_+", "_", value)
+
+    return value.strip("_")
 
 
 def computeErrorSignature(incident):
     """
-    A rough key for 'what kind of failure is this'. Error codes are the
-    strongest signal when present; falls back to the first symptom line
-    when they're not. This doesn't need to be perfect - it just needs to
-    group "restart DB fixed this" and "restart DB did NOT fix this" under
-    the same key so conditioned success rates mean something.
+    Creates a stable error signature for an incident.
+
+    Priority:
+
+    1. Structured errorCodes
+    2. Single errorCode
+    3. Known error patterns in symptoms
+    4. Known error patterns in title/description
+    5. First available symptom/title text
+    6. unknown
+
+    The goal is not perfect NLP. The goal is to consistently group
+    similar failures so conditioned success rates can be meaningful.
     """
+
+    # --------------------------------------------------
+    # 1. Multiple structured error codes
+    # --------------------------------------------------
+
     errorCodes = incident.get("errorCodes") or []
+
     if errorCodes:
-        return "|".join(sorted(code.upper() for code in errorCodes))
+        normalizedCodes = [
+            normalizeSignature(code)
+            for code in errorCodes
+            if normalizeSignature(code)
+        ]
+
+        if normalizedCodes:
+            return "|".join(sorted(normalizedCodes))
+
+    # --------------------------------------------------
+    # 2. Single error code
+    # --------------------------------------------------
+
+    errorCode = incident.get("errorCode")
+
+    if errorCode:
+        normalizedCode = normalizeSignature(errorCode)
+
+        if normalizedCode:
+            return normalizedCode
+
+    # --------------------------------------------------
+    # Gather available text
+    # --------------------------------------------------
 
     symptoms = incident.get("symptoms") or []
-    if symptoms and symptoms[0].strip():
-        return "symptom:" + symptoms[0].strip().lower()[:60]
+
+    textParts = []
+
+    if symptoms:
+        textParts.extend(
+            symptom
+            for symptom in symptoms
+            if symptom
+        )
+
+    title = incident.get("title", "")
+    description = incident.get("description", "")
+
+    if title:
+        textParts.append(title)
+
+    if description:
+        textParts.append(description)
+
+    combinedText = " ".join(
+        str(part)
+        for part in textParts
+    ).lower()
+
+    # --------------------------------------------------
+    # 3. Recognize common failure patterns
+    # --------------------------------------------------
+
+    knownPatterns = [
+        (
+            [
+                "connection refused",
+                "connection_refused"
+            ],
+            "CONNECTION_REFUSED"
+        ),
+        (
+            [
+                "connection timeout",
+                "connection timed out",
+                "timeout connecting",
+                "timed out"
+            ],
+            "CONNECTION_TIMEOUT"
+        ),
+        (
+            [
+                "authentication failed",
+                "auth failed",
+                "invalid credentials",
+                "credential failed"
+            ],
+            "AUTH_FAILED"
+        ),
+        (
+            [
+                "database unavailable",
+                "database down",
+                "db unavailable"
+            ],
+            "DATABASE_UNAVAILABLE"
+        ),
+        (
+            [
+                "service unavailable",
+                "503"
+            ],
+            "SERVICE_UNAVAILABLE"
+        ),
+        (
+            [
+                "internal server error",
+                "http 500",
+                "500 error"
+            ],
+            "INTERNAL_SERVER_ERROR"
+        ),
+        (
+            [
+                "rate limit",
+                "too many requests",
+                "429"
+            ],
+            "RATE_LIMITED"
+        ),
+        (
+            [
+                "cache",
+                "stale cache"
+            ],
+            "CACHE_FAILURE"
+        ),
+        (
+            [
+                "out of memory",
+                "oom",
+                "memory exhausted"
+            ],
+            "OUT_OF_MEMORY"
+        ),
+    ]
+
+    for patterns, signature in knownPatterns:
+        if any(
+            pattern in combinedText
+            for pattern in patterns
+        ):
+            return signature
+
+    # --------------------------------------------------
+    # 4. Fall back to first symptom
+    # --------------------------------------------------
+
+    if symptoms:
+        firstSymptom = str(symptoms[0]).strip()
+
+        if firstSymptom:
+            normalized = normalizeSignature(
+                firstSymptom[:80]
+            )
+
+            if normalized:
+                return normalized
+
+    # --------------------------------------------------
+    # 5. Fall back to title
+    # --------------------------------------------------
+
+    if title:
+        normalized = normalizeSignature(title[:80])
+
+        if normalized:
+            return normalized
 
     return "unknown"
 
@@ -26,6 +225,7 @@ def computeErrorSignature(incident):
 def _rate(stats):
     success = stats.get("successCount", 0)
     failure = stats.get("failureCount", 0)
+
     total = success + failure
 
     if total == 0:
@@ -36,10 +236,18 @@ def _rate(stats):
 
 class OutcomeTracker:
     """
-    Tracks success/failure per (source incident, error signature) instead
-    of a single aggregate per incident. "Restart DB" can be 80% successful
-    overall but far worse specifically when the error is 'auth failed' -
-    conditioning on the error signature is what lets ranking reflect that.
+    Tracks recovery outcomes per:
+
+        (source incident, error signature)
+
+    This allows the system to distinguish:
+
+        "Restart database usually works"
+
+    from:
+
+        "Restart database works for CONNECTION_REFUSED
+         but not for AUTH_FAILED."
     """
 
     def __init__(self, store=None):
@@ -48,62 +256,139 @@ class OutcomeTracker:
     def _ensureStatsShape(self, incident):
         stats = incident.get("resolutionStats", {})
 
-        isOldFlatShape = "overall" not in stats and "conditioned" not in stats
+        isOldFlatShape = (
+            "overall" not in stats
+            and "conditioned" not in stats
+        )
+
         if isOldFlatShape:
             stats = {
                 "overall": {
-                    "successCount": stats.get("successCount", 0),
-                    "failureCount": stats.get("failureCount", 0)
+                    "successCount": stats.get(
+                        "successCount",
+                        0
+                    ),
+                    "failureCount": stats.get(
+                        "failureCount",
+                        0
+                    )
                 },
                 "conditioned": {}
             }
+
             incident["resolutionStats"] = stats
 
-        stats.setdefault("overall", dict(DEFAULT_STATS))
-        stats.setdefault("conditioned", {})
+        stats.setdefault(
+            "overall",
+            dict(DEFAULT_STATS)
+        )
+
+        stats.setdefault(
+            "conditioned",
+            {}
+        )
 
         return stats
 
-    def recordOutcome(self, incidentId, errorSignature, result):
+    def recordOutcome(
+        self,
+        incidentId,
+        errorSignature,
+        result
+    ):
+        """
+        Records a verified recovery outcome.
+
+        Only 'success' and 'failed' are valid outcomes.
+        """
+
         if result not in ["success", "failed"]:
             return None
 
-        incident = self.store.getIncident(incidentId)
+        incident = self.store.getIncident(
+            incidentId
+        )
+
         if incident is None:
             return None
 
-        stats = self._ensureStatsShape(incident)
-        conditioned = stats["conditioned"].setdefault(
-            errorSignature, dict(DEFAULT_STATS)
+        stats = self._ensureStatsShape(
+            incident
         )
 
-        key = "successCount" if result == "success" else "failureCount"
+        errorSignature = (
+            normalizeSignature(errorSignature)
+            or "unknown"
+        )
+
+        conditioned = stats[
+            "conditioned"
+        ].setdefault(
+            errorSignature,
+            dict(DEFAULT_STATS)
+        )
+
+        key = (
+            "successCount"
+            if result == "success"
+            else "failureCount"
+        )
+
         conditioned[key] += 1
+
         stats["overall"][key] += 1
 
         self.store.saveIncidents()
 
         return stats
 
-    def getSuccessRate(self, incident, errorSignature):
+    def getSuccessRate(
+        self,
+        incident,
+        errorSignature
+    ):
         """
-        Returns (rate, isConditioned).
+        Returns:
 
-        isConditioned tells you whether this rate came from history
-        specific to this error signature, or fell back to the incident's
-        overall success rate because there wasn't conditioned data yet.
-        Surface that distinction in the UI later - it's the difference
-        between the agent being confident and the agent guessing.
+            (successRate, isConditioned)
+
+        Example:
+
+            (0.8, True)
+
+        means the 80% rate came specifically from historical
+        outcomes for this error signature.
+
+        If there is no conditioned history, the system falls
+        back to the overall success rate:
+
+            (0.8, False)
         """
-        stats = self._ensureStatsShape(incident)
 
-        conditioned = stats["conditioned"].get(errorSignature)
+        stats = self._ensureStatsShape(
+            incident
+        )
+
+        errorSignature = (
+            normalizeSignature(errorSignature)
+            or "unknown"
+        )
+
+        conditioned = stats[
+            "conditioned"
+        ].get(errorSignature)
+
         if conditioned is not None:
+
             rate = _rate(conditioned)
+
             if rate is not None:
                 return rate, True
 
-        overallRate = _rate(stats["overall"])
+        overallRate = _rate(
+            stats["overall"]
+        )
+
         if overallRate is not None:
             return overallRate, False
 

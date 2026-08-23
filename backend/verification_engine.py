@@ -3,11 +3,12 @@ from backend.outcome_tracker import computeErrorSignature
 
 class VerificationEngine:
     """
-    Verifies whether a recovery action actually restored
-    the expected system state.
+    Verifies whether a recovery action actually restored the
+    expected post-conditions for the detected incident type.
 
-    A successful execution is not considered a successful recovery
-    until the expected post-conditions are verified.
+    Execution success is NOT recovery success.
+
+    The verification requirements depend on the error signature.
     """
 
     def verify(self, incident, environmentState):
@@ -17,111 +18,175 @@ class VerificationEngine:
 
         checks = []
 
-        # --------------------------------------------------
-        # Database-related post-conditions
-        # --------------------------------------------------
+        # ==================================================
+        # CONNECTION / DATABASE FAILURES
+        # ==================================================
 
-        if any(
-            keyword in normalizedError
-            for keyword in [
+        if self._matchesAny(
+            normalizedError,
+            [
+                "connection",
+                "connection_refused",
                 "database",
                 "db",
-                "connection",
                 "postgres",
                 "mysql",
+                "connection_timeout",
             ]
         ):
-            databaseRunning = environmentState.get(
-                "databaseRunning",
-                False
+            self._addCheck(
+                checks,
+                environmentState,
+                "databaseRunning"
             )
 
-            checks.append({
-                "name": "databaseRunning",
-                "expected": True,
-                "actual": databaseRunning,
-                "passed": databaseRunning is True,
-            })
+            self._addCheck(
+                checks,
+                environmentState,
+                "connectionPoolHealthy"
+            )
 
-        # --------------------------------------------------
-        # Backend/API post-conditions
-        # --------------------------------------------------
+        # ==================================================
+        # REPLICA FAILURES
+        # ==================================================
 
-        if any(
-            keyword in normalizedError
-            for keyword in [
+        if self._matchesAny(
+            normalizedError,
+            [
+                "replica",
+                "replication",
+                "replica_unhealthy",
+            ]
+        ):
+            self._addCheck(
+                checks,
+                environmentState,
+                "replicaHealthy"
+            )
+
+            self._addCheck(
+                checks,
+                environmentState,
+                "databaseRunning"
+            )
+
+        # ==================================================
+        # BACKEND / API FAILURES
+        # ==================================================
+
+        if self._matchesAny(
+            normalizedError,
+            [
                 "backend",
                 "api",
                 "service",
-                "503",
+                "http_500",
+                "http_503",
                 "500",
+                "503",
+                "unavailable",
             ]
         ):
-            backendRunning = environmentState.get(
-                "backendRunning",
-                False
+            self._addCheck(
+                checks,
+                environmentState,
+                "backendRunning"
             )
 
-            checks.append({
-                "name": "backendRunning",
-                "expected": True,
-                "actual": backendRunning,
-                "passed": backendRunning is True,
-            })
-
-            apiHealthy = environmentState.get(
-                "apiHealthy",
-                False
+            self._addCheck(
+                checks,
+                environmentState,
+                "apiHealthy"
             )
 
-            checks.append({
-                "name": "apiHealthy",
-                "expected": True,
-                "actual": apiHealthy,
-                "passed": apiHealthy is True,
-            })
+        # ==================================================
+        # CACHE FAILURES
+        # ==================================================
 
-        # --------------------------------------------------
-        # Cache post-condition
-        # --------------------------------------------------
-
-        if any(
-            keyword in normalizedError
-            for keyword in [
+        if self._matchesAny(
+            normalizedError,
+            [
                 "cache",
-                "stale",
                 "redis",
+                "stale",
+                "cache_error",
             ]
         ):
-            cacheHealthy = environmentState.get(
-                "cacheHealthy",
-                False
+            self._addCheck(
+                checks,
+                environmentState,
+                "cacheHealthy"
             )
 
-            checks.append({
-                "name": "cacheHealthy",
-                "expected": True,
-                "actual": cacheHealthy,
-                "passed": cacheHealthy is True,
-            })
+        # ==================================================
+        # CREDENTIAL / AUTHENTICATION FAILURES
+        # ==================================================
 
-        # --------------------------------------------------
-        # Generic health check
-        # --------------------------------------------------
+        if self._matchesAny(
+            normalizedError,
+            [
+                "credential",
+                "credentials",
+                "auth",
+                "authentication",
+                "unauthorized",
+                "forbidden",
+                "access_denied",
+            ]
+        ):
+            self._addCheck(
+                checks,
+                environmentState,
+                "credentialsHealthy"
+            )
+
+            self._addCheck(
+                checks,
+                environmentState,
+                "errorSignature",
+                expected=""
+            )
+
+        # ==================================================
+        # CONFIGURATION FAILURES
+        # ==================================================
+
+        if self._matchesAny(
+            normalizedError,
+            [
+                "config",
+                "configuration",
+                "misconfiguration",
+                "invalid_config",
+            ]
+        ):
+            self._addCheck(
+                checks,
+                environmentState,
+                "configurationHealthy"
+            )
+
+        # ==================================================
+        # UNKNOWN ERROR
+        #
+        # Conservative fallback.
+        # We do NOT declare recovery based on a single
+        # unrelated field.
+        # ==================================================
 
         if not checks:
-            checks.append({
-                "name": "apiHealthy",
-                "expected": True,
-                "actual": environmentState.get(
-                    "apiHealthy",
-                    False
-                ),
-                "passed": environmentState.get(
-                    "apiHealthy",
-                    False
-                ) is True,
-            })
+
+            self._addCheck(
+                checks,
+                environmentState,
+                "backendRunning"
+            )
+
+            self._addCheck(
+                checks,
+                environmentState,
+                "apiHealthy"
+            )
 
         recovered = all(
             check["passed"]
@@ -129,7 +194,11 @@ class VerificationEngine:
         )
 
         return {
-            "status": "VERIFIED" if recovered else "FAILED",
+            "status": (
+                "VERIFIED"
+                if recovered
+                else "FAILED"
+            ),
             "recovered": recovered,
             "errorSignature": errorSignature,
             "checks": checks,
@@ -137,8 +206,39 @@ class VerificationEngine:
                 "Recovery verified successfully."
                 if recovered
                 else (
-                    "Recovery action executed, but the expected "
-                    "system state was not restored."
+                    "Recovery action executed, but one or more "
+                    "required post-conditions were not satisfied."
                 )
             ),
         }
+
+    def _matchesAny(self, value, keywords):
+        """
+        Returns True if any keyword appears in the
+        normalized error signature.
+        """
+
+        return any(
+            keyword in value
+            for keyword in keywords
+        )
+
+    def _addCheck(
+        self,
+        checks,
+        environmentState,
+        field,
+        expected=True
+    ):
+        """
+        Adds a structured verification check.
+        """
+
+        actual = environmentState.get(field)
+
+        checks.append({
+            "name": field,
+            "expected": expected,
+            "actual": actual,
+            "passed": actual == expected,
+        })

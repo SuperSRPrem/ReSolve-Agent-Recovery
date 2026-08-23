@@ -2,22 +2,13 @@ from backend.demo_agent import DemoAgent
 from backend.mock_environment import MockEnvironment
 
 
-def printResult(result):
-    print()
-    print("=" * 70)
-    print("FINAL RESULT")
-    print("=" * 70)
-
-    print("Status:", result["status"])
-    print("Message:", result.get("message"))
-    print("Error Signature:", result.get("errorSignature"))
-
+def printAttempts(result):
     print()
     print("ATTEMPTS")
 
     for index, attempt in enumerate(
         result["attempts"],
-        start=1,
+        start=1
     ):
         print()
         print(f"Attempt {index}")
@@ -25,22 +16,51 @@ def printResult(result):
         print("Result:", attempt["result"])
         print("Note:", attempt["note"])
 
-        if "verification" in attempt:
-            verification = attempt["verification"]
+        verification = attempt.get("verification")
 
+        if verification:
             print(
                 "Verification:",
-                verification["status"],
+                verification["status"]
             )
 
             for check in verification["checks"]:
-                print(
-                    f"  - {check['name']}: "
-                    f"{'PASS' if check['passed'] else 'FAIL'}"
+                status = (
+                    "PASS"
+                    if check["passed"]
+                    else "FAIL"
                 )
 
+                print(
+                    f"  - {check['name']}: {status}"
+                )
+
+
+def printResult(result):
     print()
-    print("FINAL ENVIRONMENT STATE")
+    print("=" * 70)
+    print("CURRENT RESULT")
+    print("=" * 70)
+
+    print("Status:", result["status"])
+    print("Message:", result["message"])
+    print(
+        "Error Signature:",
+        result["errorSignature"]
+    )
+
+    print(
+        "Recovery Attempts:",
+        result["recoveryAttempts"]
+    )
+
+    if result.get("reason"):
+        print("Reason:", result["reason"])
+
+    printAttempts(result)
+
+    print()
+    print("CURRENT ENVIRONMENT STATE")
     print(result["environmentState"])
 
 
@@ -65,14 +85,64 @@ def main():
         "errorCode": "connection refused",
     }
 
-    agent = DemoAgent(environment)
+    agent = DemoAgent(
+        environment=environment,
+        maxRecoveryAttempts=5
+    )
 
-    result = agent.runIncident(
+    # ----------------------------------------------
+    # Start recovery
+    # ----------------------------------------------
+
+    result = agent.startRecovery(
         incident,
-        "Retry database connection",
+        "Retry database connection"
     )
 
     printResult(result)
+
+    # ----------------------------------------------
+    # Demo human approval
+    # ----------------------------------------------
+
+    while result["status"] == "AWAITING_APPROVAL":
+
+        print()
+        print("=" * 70)
+        print("HUMAN APPROVAL SIMULATION")
+        print("=" * 70)
+
+        strategy = result["strategy"]
+
+        print(
+            "Strategy requiring approval:",
+            strategy["action"]
+        )
+
+        print(
+            "Risk tier:",
+            strategy["riskTier"]
+        )
+
+        print()
+        print("Human decision: APPROVED")
+
+        result = agent.approvePendingStrategy(
+            result["session"]
+        )
+
+        printResult(result)
+
+    print()
+    print("=" * 70)
+    print("FINAL RESULT")
+    print("=" * 70)
+
+    print("Status:", result["status"])
+
+    print()
+    print("FINAL ENVIRONMENT STATE")
+    print(result["environmentState"])
 
 
 if __name__ == "__main__":
