@@ -1,14 +1,22 @@
 from backend.demo_agent import DemoAgent
+
 from backend.freshservice_recovery_bridge import (
     FreshserviceRecoveryBridge
 )
-from backend.mock_environment import MockEnvironment
+
+from backend.freshservice_recovery_service import (
+    FreshserviceRecoveryService
+)
+
+from backend.mock_environment import (
+    MockEnvironment
+)
 
 
 class FreshserviceRecoveryRunner:
     """
-    Connects a real Freshservice ticket to the
-    existing ReSolve recovery system.
+    Connects a Freshservice ticket to the existing
+    ReSolve recovery system.
 
     Flow:
 
@@ -18,6 +26,8 @@ class FreshserviceRecoveryRunner:
                 ↓
         ReSolve Incident
                 ↓
+        FreshserviceRecoveryRunner
+                ↓
         DemoAgent
                 ↓
         RecoverySession
@@ -25,14 +35,24 @@ class FreshserviceRecoveryRunner:
         RecoveryMemory
                 ↓
         Recovery Strategy
+                ↓
+        MockEnvironment
+                ↓
+        VerificationEngine
+                ↓
+        FreshserviceRecoveryService
+                ↓
+        Freshservice Notes / Resolution / Escalation
     """
 
     def __init__(
         self,
         bridge=None,
         environment=None,
+        recoveryService=None,
         maxRecoveryAttempts=5
     ):
+
         self.bridge = (
             bridge
             or FreshserviceRecoveryBridge()
@@ -43,9 +63,133 @@ class FreshserviceRecoveryRunner:
             or MockEnvironment()
         )
 
+        self.recoveryService = (
+            recoveryService
+            or FreshserviceRecoveryService()
+        )
+
         self.maxRecoveryAttempts = (
             maxRecoveryAttempts
         )
+
+    # ==================================================
+    # CREATE FRESHSERVICE HOOKS
+    # ==================================================
+
+    def _createHooks(
+        self,
+        ticketId
+    ):
+        """
+        Creates lifecycle hooks for one Freshservice
+        recovery run.
+
+        DemoAgent remains independent of Freshservice.
+
+        These hooks connect DemoAgent lifecycle events
+        to FreshserviceRecoveryService.
+        """
+
+        def onRecoveryStarted(session):
+
+            self.recoveryService.recordRecoveryStarted(
+                ticketId=ticketId,
+                incident=session.incident,
+                errorSignature=session.errorSignature
+            )
+
+        def onStrategySelected(
+            session,
+            strategy
+        ):
+
+            self.recoveryService.recordStrategySelected(
+                ticketId=ticketId,
+                strategy=strategy
+            )
+
+        def onApprovalRequired(
+            session,
+            strategy
+        ):
+
+            self.recoveryService.recordApprovalRequired(
+                ticketId=ticketId,
+                strategy=strategy
+            )
+
+        def onActionResult(
+            session,
+            action,
+            result,
+            verification
+        ):
+
+            self.recoveryService.recordActionResult(
+                ticketId=ticketId,
+                action=action,
+                result=result,
+                verification=verification
+            )
+
+        def onRecoverySuccess(
+            session,
+            result
+        ):
+
+            self.recoveryService.recordRecoverySuccess(
+                ticketId=ticketId,
+                result=result
+            )
+
+        def onRecoveryFailure(
+            session,
+            result
+        ):
+
+            self.recoveryService.recordRecoveryFailure(
+                ticketId=ticketId,
+                incident=session.incident,
+                result=result
+            )
+
+        return {
+            "onRecoveryStarted": onRecoveryStarted,
+            "onStrategySelected": onStrategySelected,
+            "onApprovalRequired": onApprovalRequired,
+            "onActionResult": onActionResult,
+            "onRecoverySuccess": onRecoverySuccess,
+            "onRecoveryFailure": onRecoveryFailure
+        }
+
+    # ==================================================
+    # CREATE RECOVERY AGENT
+    # ==================================================
+
+    def _createAgent(
+        self,
+        ticketId
+    ):
+        """
+        Creates DemoAgent configured with Freshservice
+        lifecycle hooks for this ticket.
+        """
+
+        hooks = self._createHooks(
+            ticketId
+        )
+
+        return DemoAgent(
+            environment=self.environment,
+            maxRecoveryAttempts=(
+                self.maxRecoveryAttempts
+            ),
+            hooks=hooks
+        )
+
+    # ==================================================
+    # START RECOVERY
+    # ==================================================
 
     def startRecovery(
         self,
@@ -53,8 +197,8 @@ class FreshserviceRecoveryRunner:
         firstAction
     ):
         """
-        Loads a Freshservice ticket and starts the
-        existing ReSolve recovery flow.
+        Loads a Freshservice ticket and starts
+        the ReSolve recovery workflow.
         """
 
         # ==============================================
@@ -67,7 +211,10 @@ class FreshserviceRecoveryRunner:
             )
         )
 
-        if not bridgeResult["success"]:
+        if not bridgeResult.get(
+            "success",
+            False
+        ):
 
             return {
                 "success": False,
@@ -83,21 +230,20 @@ class FreshserviceRecoveryRunner:
                 "bridgeResult": bridgeResult
             }
 
-        incident = bridgeResult["incident"]
+        incident = bridgeResult[
+            "incident"
+        ]
 
         # ==============================================
-        # CREATE EXISTING RECOVERY AGENT
+        # CREATE AGENT WITH FRESHSERVICE HOOKS
         # ==============================================
 
-        agent = DemoAgent(
-            environment=self.environment,
-            maxRecoveryAttempts=(
-                self.maxRecoveryAttempts
-            )
+        agent = self._createAgent(
+            ticketId
         )
 
         # ==============================================
-        # START EXISTING RECOVERY FLOW
+        # START RECOVERY
         # ==============================================
 
         recoveryResult = (
@@ -132,22 +278,65 @@ class FreshserviceRecoveryRunner:
 
         return recoveryResult
 
+    # ==================================================
+    # APPROVE PENDING STRATEGY
+    # ==================================================
+
     def approvePendingStrategy(
         self,
+        ticketId,
         session
     ):
         """
-        Passes human approval to the existing
-        ReSolve recovery session.
+        Continues a paused recovery after
+        human approval.
+
+        The new DemoAgent receives the same
+        Freshservice lifecycle hooks.
         """
 
-        agent = DemoAgent(
-            environment=self.environment,
-            maxRecoveryAttempts=(
-                self.maxRecoveryAttempts
+        agent = self._createAgent(
+            ticketId
+        )
+
+        recoveryResult = (
+            agent.approvePendingStrategy(
+                session
             )
         )
 
-        return agent.approvePendingStrategy(
-            session
+        recoveryResult[
+            "freshserviceTicketId"
+        ] = ticketId
+
+        return recoveryResult
+
+    # ==================================================
+    # REJECT PENDING STRATEGY
+    # ==================================================
+
+    def rejectPendingStrategy(
+        self,
+        ticketId,
+        session
+    ):
+        """
+        Continues recovery after a human rejects
+        the currently pending strategy.
+        """
+
+        agent = self._createAgent(
+            ticketId
         )
+
+        recoveryResult = (
+            agent.rejectPendingStrategy(
+                session
+            )
+        )
+
+        recoveryResult[
+            "freshserviceTicketId"
+        ] = ticketId
+
+        return recoveryResult

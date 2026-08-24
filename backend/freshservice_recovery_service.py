@@ -363,24 +363,26 @@ class FreshserviceRecoveryService:
 
         Steps:
 
-        1. Add recovery failure note.
-        2. Escalate the existing ticket.
-        3. Optionally create a separate escalation ticket.
+            1. Add recovery failure note.
+            2. Escalate the existing ticket.
+            3. Optionally create a separate escalation ticket.
         """
-
-        failureNote = self.recordRecoveryFailure(
-            ticketId,
-            result
-        )
 
         reason = result.get(
             "reason",
             "Automated recovery failed."
         )
 
-        escalationResult = self.escalateTicket(
+        failureNote = self.recordRecoveryFailure(
             ticketId,
-            reason
+            result
+        )
+
+        escalationResult = self.updateTicketDuringRecovery(
+            ticketId,
+            {
+                "priority": 4
+            }
         )
 
         newTicketResult = None

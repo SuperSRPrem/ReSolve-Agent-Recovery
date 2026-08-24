@@ -18,7 +18,8 @@ class DemoAgent:
     def __init__(
         self,
         environment=None,
-        maxRecoveryAttempts=5
+        maxRecoveryAttempts=5,
+        hooks=None
     ):
         self.memory = RecoveryMemory()
         self.feedback = FeedbackManager()
@@ -34,6 +35,34 @@ class DemoAgent:
         self.maxRecoveryAttempts = (
             maxRecoveryAttempts
         )
+
+        # Optional callbacks a caller (e.g. FreshserviceRecoveryRunner)
+        # can supply to react to lifecycle events in real time, without
+        # DemoAgent needing to know Freshservice - or any external
+        # system - exists. Missing hooks are no-ops, so every existing
+        # caller (app.py, the test_*.py scripts) keeps working unchanged.
+        #
+        # Supported keys, all called as hook(session, ...):
+        #   onRecoveryStarted(session)
+        #   onStrategySelected(session, strategy)
+        #   onApprovalRequired(session, strategy)
+        #   onActionResult(session, action, result, verification)
+        #   onRecoverySuccess(session, result)
+        #   onRecoveryFailure(session, result)
+        self.hooks = hooks or {}
+
+    def _fire(self, hookName, *args, **kwargs):
+        hook = self.hooks.get(hookName)
+
+        if hook is None:
+            return
+
+        try:
+            hook(*args, **kwargs)
+        except Exception as error:
+            # A hook failing (e.g. Freshservice API hiccup) must never
+            # break the recovery loop itself - surface it, don't raise.
+            print(f"[ReSolve] hook '{hookName}' raised: {error}")
 
     def getApprovalStatus(self, riskTier):
         if riskTier == "low":
@@ -69,6 +98,8 @@ class DemoAgent:
             errorSignature
         )
 
+        self._fire("onRecoveryStarted", session)
+
         return self.continueRecovery(
             session
         )
@@ -99,6 +130,12 @@ class DemoAgent:
             choice = recovery[
                 "bestChoice"
             ]
+
+            self._fire(
+                "onStrategySelected",
+                session,
+                choice
+            )
 
             action = choice["action"]
 
@@ -325,6 +362,14 @@ class DemoAgent:
                 "failed"
             )
 
+            self._fire(
+                "onActionResult",
+                session,
+                action,
+                "failed",
+                None
+            )
+
             return {
                 "recovered": False,
                 "execution": execution,
@@ -373,6 +418,14 @@ class DemoAgent:
             choice["incidentId"],
             session.errorSignature,
             verifiedResult
+        )
+
+        self._fire(
+            "onActionResult",
+            session,
+            action,
+            verifiedResult,
+            verification
         )
 
         return {
@@ -466,5 +519,29 @@ class DemoAgent:
 
         if reason is not None:
             result["reason"] = reason
+
+        # Fire the terminal-ish lifecycle hooks here, now that result
+        # is fully built. _buildResult is the one place every
+        # continueRecovery/approvePendingStrategy return path passes
+        # through, so this is the single source of truth for these
+        # three - no risk of firing them twice or missing a path.
+        if status == "AWAITING_APPROVAL" and strategy is not None:
+            self._fire(
+                "onApprovalRequired",
+                session,
+                strategy
+            )
+        elif status == "RECOVERED":
+            self._fire(
+                "onRecoverySuccess",
+                session,
+                result
+            )
+        elif status == "ESCALATED":
+            self._fire(
+                "onRecoveryFailure",
+                session,
+                result
+            )
 
         return result
