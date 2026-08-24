@@ -4,35 +4,15 @@ from backend.outcome_tracker import computeErrorSignature
 from backend.mock_environment import MockEnvironment
 from backend.verification_engine import VerificationEngine
 from backend.recovery_session import RecoverySession
+from backend.recovery_record import RecoveryRecordManager
 
 
 class DemoAgent:
     """
     Closed-loop recovery agent.
 
-    Flow:
-
-    Incident
-        ↓
-    Retrieve strategies
-        ↓
-    Select next untried strategy
-        ↓
-    Risk gate
-        ↓
-    Execute
-        ↓
-    Verify
-        ↓
-    Recovered? ── Yes → STOP
-        │
-        No
-        ↓
-    Observe updated attempt history
-        ↓
-    Select next strategy
-        ↓
-    Repeat
+    Every recovery run automatically produces a structured
+    audit record and readable recovery documentation.
     """
 
     def __init__(
@@ -43,6 +23,7 @@ class DemoAgent:
         self.memory = RecoveryMemory()
         self.feedback = FeedbackManager()
         self.verification = VerificationEngine()
+        self.recordManager = RecoveryRecordManager()
 
         self.environment = (
             environment
@@ -50,16 +31,11 @@ class DemoAgent:
             else MockEnvironment()
         )
 
-        self.maxRecoveryAttempts = maxRecoveryAttempts
+        self.maxRecoveryAttempts = (
+            maxRecoveryAttempts
+        )
 
     def getApprovalStatus(self, riskTier):
-        """
-        Low-risk actions can execute automatically.
-
-        Medium and high-risk actions pause until
-        explicit human approval is received.
-        """
-
         if riskTier == "low":
             return {
                 "approved": True,
@@ -71,12 +47,14 @@ class DemoAgent:
             "status": "approval-required"
         }
 
-    def startRecovery(self, incident, firstAction):
-        """
-        Starts a new recovery session.
-        """
-
-        errorSignature = computeErrorSignature(incident)
+    def startRecovery(
+        self,
+        incident,
+        firstAction
+    ):
+        errorSignature = computeErrorSignature(
+            incident
+        )
 
         session = RecoverySession(
             incident,
@@ -91,23 +69,15 @@ class DemoAgent:
             errorSignature
         )
 
-        return self.continueRecovery(session)
+        return self.continueRecovery(
+            session
+        )
 
     def continueRecovery(self, session):
-        """
-        Continues recovery until one of these happens:
-
-        1. System is recovered.
-        2. Human approval is required.
-        3. No reliable strategy remains.
-        4. Maximum recovery attempts reached.
-        """
-
         while (
             session.recoveryAttempts
             < self.maxRecoveryAttempts
         ):
-
             recovery = self.memory.getRecovery(
                 session.incident,
                 session.attemptHistory
@@ -126,7 +96,9 @@ class DemoAgent:
                     reason="NO_MATCH"
                 )
 
-            choice = recovery["bestChoice"]
+            choice = recovery[
+                "bestChoice"
+            ]
 
             action = choice["action"]
 
@@ -134,21 +106,29 @@ class DemoAgent:
                 choice["riskTier"]
             )
 
-            # ----------------------------------------------
-            # Human approval required
-            # ----------------------------------------------
+            # ==========================================
+            # HUMAN APPROVAL GATE
+            # ==========================================
 
             if not approval["approved"]:
-
-                session.setPendingStrategy(choice)
+                session.setPendingStrategy(
+                    choice
+                )
 
                 session.addAttempt(
-                    action,
-                    "pending-approval",
-                    (
-                        f"{choice['riskTier'].capitalize()} risk "
-                        "strategy requires human approval."
-                    )
+                    action=action,
+                    result="pending-approval",
+                    note=(
+                        f"{choice['riskTier'].capitalize()} "
+                        "risk strategy requires human "
+                        "approval."
+                    ),
+                    riskTier=choice["riskTier"],
+                    approval=approval,
+                    sourceIncident=choice[
+                        "incidentId"
+                    ],
+                    score=choice["score"]
                 )
 
                 return self._buildResult(
@@ -162,13 +142,14 @@ class DemoAgent:
                     approval=approval
                 )
 
-            # ----------------------------------------------
-            # Automatically approved action
-            # ----------------------------------------------
+            # ==========================================
+            # AUTO-APPROVED STRATEGY
+            # ==========================================
 
             result = self._executeAndVerify(
                 session,
-                choice
+                choice,
+                approval
             )
 
             if result["recovered"]:
@@ -182,13 +163,13 @@ class DemoAgent:
                         "verified."
                     ),
                     strategy=choice,
-                    execution=result["execution"],
-                    verification=result["verification"]
+                    execution=result[
+                        "execution"
+                    ],
+                    verification=result[
+                        "verification"
+                    ]
                 )
-
-            # Action failed or verification failed.
-            # Loop continues and RecoveryMemory selects
-            # another untried strategy.
 
         session.status = "ESCALATED"
 
@@ -202,31 +183,33 @@ class DemoAgent:
             reason="MAX_ATTEMPTS_REACHED"
         )
 
-    def approvePendingStrategy(self, session):
-        """
-        Executes the strategy that was previously paused
-        for human approval.
-
-        After execution, verification happens automatically.
-
-        If it fails, the agent continues searching for the
-        next available strategy.
-        """
-
+    def approvePendingStrategy(
+        self,
+        session
+    ):
         if session.pendingStrategy is None:
             return self._buildResult(
                 session,
                 "NO_PENDING_APPROVAL",
-                "There is no strategy waiting for approval."
+                (
+                    "There is no strategy waiting "
+                    "for approval."
+                )
             )
 
         choice = session.pendingStrategy
 
         session.clearPendingStrategy()
 
+        approval = {
+            "approved": True,
+            "status": "human-approved"
+        }
+
         result = self._executeAndVerify(
             session,
-            choice
+            choice,
+            approval
         )
 
         if result["recovered"]:
@@ -240,52 +223,69 @@ class DemoAgent:
                     "and recovery was verified."
                 ),
                 strategy=choice,
-                execution=result["execution"],
-                verification=result["verification"]
+                execution=result[
+                    "execution"
+                ],
+                verification=result[
+                    "verification"
+                ]
             )
 
-        # The approved action failed verification.
-        # Continue the autonomous recovery loop.
+        return self.continueRecovery(
+            session
+        )
 
-        return self.continueRecovery(session)
-
-    def rejectPendingStrategy(self, session):
-        """
-        Rejects the pending strategy.
-
-        The rejected action is recorded as rejected and the
-        agent continues searching for another strategy.
-        """
-
+    def rejectPendingStrategy(
+        self,
+        session
+    ):
         if session.pendingStrategy is None:
             return self._buildResult(
                 session,
                 "NO_PENDING_APPROVAL",
-                "There is no strategy waiting for approval."
+                (
+                    "There is no strategy waiting "
+                    "for approval."
+                )
             )
 
         choice = session.pendingStrategy
 
         session.addAttempt(
-            choice["action"],
-            "rejected",
-            "Human rejected this recovery strategy."
+            action=choice["action"],
+            result="rejected",
+            note=(
+                "Human rejected this recovery strategy."
+            ),
+            riskTier=choice["riskTier"],
+            approval={
+                "approved": False,
+                "status": "human-rejected"
+            },
+            sourceIncident=choice[
+                "incidentId"
+            ],
+            score=choice["score"]
         )
 
         session.clearPendingStrategy()
 
-        return self.continueRecovery(session)
+        return self.continueRecovery(
+            session
+        )
 
-    def _executeAndVerify(self, session, choice):
-        """
-        Executes one strategy and automatically verifies
-        the resulting system state.
-        """
-
+    def _executeAndVerify(
+        self,
+        session,
+        choice,
+        approval
+    ):
         action = choice["action"]
 
-        execution = self.environment.executeAction(
-            action
+        execution = (
+            self.environment.executeAction(
+                action
+            )
         )
 
         session.recoveryAttempts += 1
@@ -294,16 +294,22 @@ class DemoAgent:
             "executionStatus"
         ]
 
-        # ----------------------------------------------
-        # Execution itself failed
-        # ----------------------------------------------
+        # ==========================================
+        # EXECUTION FAILED
+        # ==========================================
 
         if executionStatus != "success":
-
             session.addAttempt(
-                action,
-                "failed",
-                execution["message"]
+                action=action,
+                result="failed",
+                note=execution["message"],
+                execution=execution,
+                riskTier=choice["riskTier"],
+                approval=approval,
+                sourceIncident=choice[
+                    "incidentId"
+                ],
+                score=choice["score"]
             )
 
             self.feedback.addAttempt(
@@ -325,13 +331,15 @@ class DemoAgent:
                 "verification": None
             }
 
-        # ----------------------------------------------
-        # Automatic verification
-        # ----------------------------------------------
+        # ==========================================
+        # VERIFY REAL POST-CONDITIONS
+        # ==========================================
 
-        verification = self.verification.verify(
-            session.incident,
-            self.environment.getState()
+        verification = (
+            self.verification.verify(
+                session.incident,
+                self.environment.getState()
+            )
         )
 
         verifiedResult = (
@@ -341,10 +349,17 @@ class DemoAgent:
         )
 
         session.addAttempt(
-            action,
-            verifiedResult,
-            verification["message"],
-            verification
+            action=action,
+            result=verifiedResult,
+            note=verification["message"],
+            verification=verification,
+            execution=execution,
+            riskTier=choice["riskTier"],
+            approval=approval,
+            sourceIncident=choice[
+                "incidentId"
+            ],
+            score=choice["score"]
         )
 
         self.feedback.addAttempt(
@@ -361,7 +376,9 @@ class DemoAgent:
         )
 
         return {
-            "recovered": verification["recovered"],
+            "recovered": verification[
+                "recovered"
+            ],
             "execution": execution,
             "verification": verification
         }
@@ -378,17 +395,58 @@ class DemoAgent:
         reason=None
     ):
         """
-        Builds a consistent result object for every stage
-        of the recovery lifecycle.
+        Every result contains an automatically generated
+        structured recovery record and readable report.
+
+        Terminal results are persisted to disk.
         """
+
+        environmentState = (
+            self.environment.getState()
+        )
+
+        recoveryRecord = (
+            self.recordManager.buildRecord(
+                session=session,
+                environmentState=environmentState,
+                status=status,
+                reason=reason
+            )
+        )
+
+        documentation = (
+            self.recordManager.generateDocumentation(
+                recoveryRecord
+            )
+        )
+
+        # Persist only completed runs.
+        if status in [
+            "RECOVERED",
+            "ESCALATED"
+        ]:
+            self.recordManager.saveRecord(
+                recoveryRecord
+            )
 
         result = {
             "status": status,
             "message": message,
-            "errorSignature": session.errorSignature,
-            "attempts": session.attemptHistory,
-            "recoveryAttempts": session.recoveryAttempts,
-            "environmentState": self.environment.getState(),
+            "runId": session.runId,
+            "errorSignature": (
+                session.errorSignature
+            ),
+            "attempts": (
+                session.attemptHistory
+            ),
+            "recoveryAttempts": (
+                session.recoveryAttempts
+            ),
+            "environmentState": (
+                environmentState
+            ),
+            "recoveryRecord": recoveryRecord,
+            "documentation": documentation,
             "session": session
         }
 
@@ -402,7 +460,9 @@ class DemoAgent:
             result["execution"] = execution
 
         if verification is not None:
-            result["verification"] = verification
+            result["verification"] = (
+                verification
+            )
 
         if reason is not None:
             result["reason"] = reason
