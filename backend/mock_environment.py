@@ -1,47 +1,32 @@
-class MockEnvironment:
+from backend.recovery_environment import RecoveryEnvironment
+from backend.environment_state import (
+    createEnvironmentState,
+    copyEnvironmentState,
+)
+
+
+class MockEnvironment(RecoveryEnvironment):
     """
     Simulates a small infrastructure environment.
 
     Recovery actions are not executed directly based on arbitrary text.
     Instead, the action text is mapped to an approved capability.
 
-    This mirrors the future architecture:
+    MockEnvironment owns and changes its infrastructure state.
 
-        Recovery Agent
-            ↓
-        Policy-Controlled Action Layer
-            ↓
-        Approved Executor
-            ↓
-        MockEnvironment / Docker / API tools
+    The recovery engine only receives state snapshots through getState().
+    It does not directly own or mutate infrastructure state.
 
-    Unknown actions fail safely.
+    This prepares the same contract for future Docker/API environments.
     """
 
     def __init__(self, initialState=None):
-        defaultState = {
-            "databaseRunning": False,
-            "backendRunning": True,
-            "apiHealthy": False,
-            "cacheHealthy": True,
-            "connectionPoolHealthy": False,
-            "replicaHealthy": False,
-            "configurationHealthy": False,
-            "credentialsHealthy": True,
-            "errorSignature": "unknown"
-        }
-
-        self.state = defaultState.copy()
-
-        if initialState:
-            self.state.update(initialState)
+        self.state = createEnvironmentState(
+            initialState
+        )
 
         self.executionLog = []
 
-        # Approved capabilities.
-        #
-        # The recovery agent proposes an action in natural language.
-        # MockEnvironment maps it to one of these controlled operations.
         self.actionHandlers = {
             "restart_database": self._restartDatabase,
             "restart_backend": self._restartBackend,
@@ -55,10 +40,16 @@ class MockEnvironment:
 
     def getState(self):
         """
-        Returns a copy of the current environment state.
+        Returns an immutable-style snapshot of the current
+        environment state.
+
+        Callers receive a copy and cannot directly mutate the
+        environment's internal state.
         """
 
-        return self.state.copy()
+        return copyEnvironmentState(
+            self.state
+        )
 
     def executeAction(self, action):
         """
@@ -66,6 +57,7 @@ class MockEnvironment:
         capability.
 
         Returns:
+
         {
             "action": ...,
             "capability": ...,
@@ -83,7 +75,9 @@ class MockEnvironment:
                 message="No recovery action was provided."
             )
 
-        capability = self._resolveCapability(action)
+        capability = self._resolveCapability(
+            action
+        )
 
         if capability is None:
             return self._recordExecution(
@@ -96,7 +90,9 @@ class MockEnvironment:
                 )
             )
 
-        handler = self.actionHandlers.get(capability)
+        handler = self.actionHandlers.get(
+            capability
+        )
 
         if handler is None:
             return self._recordExecution(
@@ -123,13 +119,11 @@ class MockEnvironment:
         Maps natural-language recovery strategies to approved,
         controlled capabilities.
 
-        This is intentionally explicit.
+        This logic is intentionally preserved for now.
 
-        We do NOT allow arbitrary action text to execute arbitrary
-        commands.
-
-        Later, this same layer can map capabilities to Docker,
-        database APIs, Kubernetes, cloud APIs, etc.
+        The separate policy layer is being handled independently
+        and can replace this later without affecting the environment
+        interface.
         """
 
         normalizedAction = action.lower().strip()
@@ -323,8 +317,7 @@ class MockEnvironment:
         message
     ):
         """
-        Records the action, the approved capability it was mapped to,
-        and the resulting environment state.
+        Records the action, capability and resulting state snapshot.
         """
 
         execution = {
@@ -335,7 +328,9 @@ class MockEnvironment:
             "state": self.getState()
         }
 
-        self.executionLog.append(execution)
+        self.executionLog.append(
+            execution
+        )
 
         return execution
 
