@@ -51,18 +51,17 @@ class DemoAgent:
         #   onRecoveryFailure(session, result)
         self.hooks = hooks or {}
 
-    def _fire(self, hookName, *args, **kwargs):
-        hook = self.hooks.get(hookName)
+    def _triggerHook(
+        self,
+        hookName,
+        *args
+    ):
+        hook = self.hooks.get(
+            hookName
+        )
 
-        if hook is None:
-            return
-
-        try:
-            hook(*args, **kwargs)
-        except Exception as error:
-            # A hook failing (e.g. Freshservice API hiccup) must never
-            # break the recovery loop itself - surface it, don't raise.
-            print(f"[ReSolve] hook '{hookName}' raised: {error}")
+        if hook is not None:
+            hook(*args)
 
     def getApprovalStatus(self, riskTier):
         if riskTier == "low":
@@ -98,7 +97,10 @@ class DemoAgent:
             errorSignature
         )
 
-        self._fire("onRecoveryStarted", session)
+        self._triggerHook(
+            "onRecoveryStarted",
+            session
+        )
 
         return self.continueRecovery(
             session
@@ -115,7 +117,10 @@ class DemoAgent:
             )
 
             if recovery["status"] == "NO_MATCH":
-                session.status = "ESCALATED"
+                if hasattr(session, "markEscalated"):
+                    session.markEscalated()
+                else:
+                    session.status = "ESCALATED"
 
                 return self._buildResult(
                     session,
@@ -131,7 +136,7 @@ class DemoAgent:
                 "bestChoice"
             ]
 
-            self._fire(
+            self._triggerHook(
                 "onStrategySelected",
                 session,
                 choice
@@ -190,7 +195,10 @@ class DemoAgent:
             )
 
             if result["recovered"]:
-                session.status = "RECOVERED"
+                if hasattr(session, "markRecovered"):
+                    session.markRecovered()
+                else:
+                    session.status = "RECOVERED"
 
                 return self._buildResult(
                     session,
@@ -208,7 +216,10 @@ class DemoAgent:
                     ]
                 )
 
-        session.status = "ESCALATED"
+        if hasattr(session, "markEscalated"):
+            session.markEscalated()
+        else:
+            session.status = "ESCALATED"
 
         return self._buildResult(
             session,
@@ -250,7 +261,10 @@ class DemoAgent:
         )
 
         if result["recovered"]:
-            session.status = "RECOVERED"
+            if hasattr(session, "markRecovered"):
+                session.markRecovered()
+            else:
+                session.status = "RECOVERED"
 
             return self._buildResult(
                 session,
@@ -362,7 +376,7 @@ class DemoAgent:
                 "failed"
             )
 
-            self._fire(
+            self._triggerHook(
                 "onActionResult",
                 session,
                 action,
@@ -420,7 +434,7 @@ class DemoAgent:
             verifiedResult
         )
 
-        self._fire(
+        self._triggerHook(
             "onActionResult",
             session,
             action,
@@ -526,19 +540,19 @@ class DemoAgent:
         # through, so this is the single source of truth for these
         # three - no risk of firing them twice or missing a path.
         if status == "AWAITING_APPROVAL" and strategy is not None:
-            self._fire(
+            self._triggerHook(
                 "onApprovalRequired",
                 session,
                 strategy
             )
         elif status == "RECOVERED":
-            self._fire(
+            self._triggerHook(
                 "onRecoverySuccess",
                 session,
                 result
             )
         elif status == "ESCALATED":
-            self._fire(
+            self._triggerHook(
                 "onRecoveryFailure",
                 session,
                 result
