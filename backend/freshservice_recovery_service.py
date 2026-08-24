@@ -10,10 +10,13 @@ class FreshserviceRecoveryService:
     Responsibilities:
 
         - add live recovery notes
+        - record strategy selection
         - record approval requests
-        - record successful recovery
+        - record action results
+        - update tickets during recovery
         - resolve recovered incidents
         - escalate unrecovered incidents
+        - optionally create a separate escalation ticket
     """
 
     def __init__(
@@ -165,6 +168,34 @@ class FreshserviceRecoveryService:
         )
 
     # ==================================================
+    # TICKET UPDATE DURING RECOVERY
+    # ==================================================
+
+    def updateTicketDuringRecovery(
+        self,
+        ticketId,
+        ticketFields
+    ):
+        """
+        Updates Freshservice ticket fields while
+        automated recovery is still in progress.
+
+        Example:
+
+            updateTicketDuringRecovery(
+                ticketId=4,
+                ticketFields={
+                    "priority": 4
+                }
+            )
+        """
+
+        return self.ticketService.updateTicket(
+            ticketId,
+            ticketFields
+        )
+
+    # ==================================================
     # RECOVERY SUCCESS
     # ==================================================
 
@@ -198,7 +229,7 @@ class FreshserviceRecoveryService:
         }
 
     # ==================================================
-    # RECOVERY FAILURE / ESCALATION
+    # RECOVERY FAILURE
     # ==================================================
 
     def recordRecoveryFailure(
@@ -223,3 +254,149 @@ class FreshserviceRecoveryService:
             ticketId,
             body
         )
+
+    # ==================================================
+    # ESCALATE EXISTING TICKET
+    # ==================================================
+
+    def escalateTicket(
+        self,
+        ticketId,
+        reason,
+        priority=4
+    ):
+        """
+        Escalates the existing Freshservice ticket.
+
+        The ticket is kept open, while its priority
+        can be increased.
+
+        A recovery failure note is also added.
+        """
+
+        noteBody = (
+            "ReSolve escalation required.\n\n"
+            f"Reason: {reason}\n"
+            f"Escalation Priority: {priority}\n\n"
+            "Automated recovery was unable to safely "
+            "restore the service. Human intervention "
+            "is now required."
+        )
+
+        noteResult = self.ticketService.addNote(
+            ticketId,
+            noteBody
+        )
+
+        updateResult = self.ticketService.updateTicket(
+            ticketId,
+            {
+                "priority": priority
+            }
+        )
+
+        return {
+            "note": noteResult,
+            "ticketUpdate": updateResult
+        }
+
+    # ==================================================
+    # CREATE ESCALATION TICKET
+    # ==================================================
+
+    def createEscalationTicket(
+        self,
+        originalTicketId,
+        incident,
+        result,
+        priority=4
+    ):
+        """
+        Creates a separate Freshservice ticket when
+        the existing incident needs to be escalated
+        to another team or handled separately.
+        """
+
+        subject = (
+            "[ESCALATION] "
+            f"{incident.get('title', 'Recovery Failed')}"
+        )
+
+        description = (
+            "ReSolve automated recovery failed and "
+            "requires human investigation.\n\n"
+            f"Original Freshservice Ticket: "
+            f"{originalTicketId}\n"
+            f"Incident ID: "
+            f"{incident.get('incidentId', '')}\n"
+            f"Error Signature: "
+            f"{result.get('errorSignature', '')}\n"
+            f"Recovery Attempts: "
+            f"{result.get('recoveryAttempts', 0)}\n"
+            f"Reason: "
+            f"{result.get('reason', 'Unknown')}\n\n"
+            "Please investigate the incident and "
+            "continue recovery manually."
+        )
+
+        return self.ticketService.createTicket(
+            subject=subject,
+            description=description,
+            source=2,
+            priority=priority,
+            status=2
+        )
+
+    # ==================================================
+    # COMPLETE FAILURE + ESCALATION
+    # ==================================================
+
+    def handleRecoveryFailure(
+        self,
+        ticketId,
+        incident,
+        result,
+        createEscalationTicket=False
+    ):
+        """
+        Complete failure handling.
+
+        Steps:
+
+        1. Add recovery failure note.
+        2. Escalate the existing ticket.
+        3. Optionally create a separate escalation ticket.
+        """
+
+        failureNote = self.recordRecoveryFailure(
+            ticketId,
+            result
+        )
+
+        reason = result.get(
+            "reason",
+            "Automated recovery failed."
+        )
+
+        escalationResult = self.escalateTicket(
+            ticketId,
+            reason
+        )
+
+        newTicketResult = None
+
+        if createEscalationTicket:
+
+            newTicketResult = (
+                self.createEscalationTicket(
+                    ticketId,
+                    incident,
+                    result
+                )
+            )
+
+        return {
+            "failureNote": failureNote,
+            "escalation": escalationResult,
+            "newEscalationTicket": newTicketResult
+        }
