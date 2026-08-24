@@ -1,0 +1,106 @@
+[
+  {
+    "runId": "RUN-637CC375B810",
+    "createdAt": "2026-08-24T14:09:58.023597+00:00",
+    "updatedAt": "2026-08-24T14:09:58.037473+00:00",
+    "incident": {
+      "incidentId": "demo-doc-001",
+      "title": "Database connection failure",
+      "service": "backend",
+      "severity": "high",
+      "environment": "",
+      "symptoms": [],
+      "errorCodes": [],
+      "description": "Backend cannot connect to the database. Connection refused."
+    },
+    "errorSignature": "CONNECTION_REFUSED",
+    "status": "RECOVERED",
+    "reason": null,
+    "recoveryAttempts": 1,
+    "attempts": [
+      {
+        "attemptNumber": 1,
+        "action": "Retry database connection",
+        "result": "failed",
+        "errorSignature": "CONNECTION_REFUSED",
+        "note": "Initial host agent action failed before recovery memory was consulted."
+      },
+      {
+        "attemptNumber": 2,
+        "action": "Restore previous connection pool configuration",
+        "result": "pending-approval",
+        "errorSignature": "CONNECTION_REFUSED",
+        "note": "Medium risk strategy requires human approval.",
+        "riskTier": "medium",
+        "approval": {
+          "approved": false,
+          "status": "approval-required"
+        },
+        "sourceIncident": "INC-1421",
+        "score": 0.7599685168266297
+      },
+      {
+        "attemptNumber": 3,
+        "action": "Restore previous connection pool configuration",
+        "result": "success",
+        "errorSignature": "CONNECTION_REFUSED",
+        "note": "Recovery verified successfully.",
+        "riskTier": "medium",
+        "approval": {
+          "approved": true,
+          "status": "human-approved"
+        },
+        "sourceIncident": "INC-1421",
+        "score": 0.7599685168266297,
+        "execution": {
+          "action": "Restore previous connection pool configuration",
+          "capability": "restore_connection_pool",
+          "executionStatus": "success",
+          "message": "Previous connection pool configuration restored successfully.",
+          "state": {
+            "databaseRunning": true,
+            "backendRunning": false,
+            "apiHealthy": false,
+            "cacheHealthy": true,
+            "connectionPoolHealthy": true,
+            "replicaHealthy": false,
+            "configurationHealthy": false,
+            "credentialsHealthy": true,
+            "errorSignature": "unknown"
+          }
+        },
+        "verification": {
+          "status": "VERIFIED",
+          "recovered": true,
+          "errorSignature": "CONNECTION_REFUSED",
+          "checks": [
+            {
+              "name": "databaseRunning",
+              "expected": true,
+              "actual": true,
+              "passed": true
+            },
+            {
+              "name": "connectionPoolHealthy",
+              "expected": true,
+              "actual": true,
+              "passed": true
+            }
+          ],
+          "message": "Recovery verified successfully."
+        }
+      }
+    ],
+    "finalEnvironmentState": {
+      "databaseRunning": true,
+      "backendRunning": false,
+      "apiHealthy": false,
+      "cacheHealthy": true,
+      "connectionPoolHealthy": true,
+      "replicaHealthy": false,
+      "configurationHealthy": false,
+      "credentialsHealthy": true,
+      "errorSignature": "unknown"
+    }
+  }
+]

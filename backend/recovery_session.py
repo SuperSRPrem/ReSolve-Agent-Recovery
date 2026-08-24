@@ -1,12 +1,27 @@
+from datetime import datetime, timezone
+from uuid import uuid4
+
+
 class RecoverySession:
     """
     Stores the state of one recovery run.
 
-    This allows the agent to pause for human approval and later
-    resume from exactly where it stopped.
+    The session survives approval pauses and preserves the
+    complete recovery history required for audit records.
     """
 
-    def __init__(self, incident, errorSignature, firstAction):
+    def __init__(
+        self,
+        incident,
+        errorSignature,
+        firstAction
+    ):
+        self.runId = "RUN-" + uuid4().hex[:12].upper()
+
+        self.createdAt = datetime.now(
+            timezone.utc
+        ).isoformat()
+
         self.incident = incident
         self.errorSignature = errorSignature
 
@@ -31,7 +46,12 @@ class RecoverySession:
         action,
         result,
         note="",
-        verification=None
+        verification=None,
+        execution=None,
+        riskTier=None,
+        approval=None,
+        sourceIncident=None,
+        score=None
     ):
         attempt = {
             "action": action,
@@ -43,7 +63,28 @@ class RecoverySession:
         if verification is not None:
             attempt["verification"] = verification
 
-        self.attemptHistory.append(attempt)
+        if execution is not None:
+            attempt["execution"] = execution
+
+        if riskTier is not None:
+            attempt["riskTier"] = riskTier
+
+        if approval is not None:
+            attempt["approval"] = approval
+
+        if sourceIncident is not None:
+            attempt["sourceIncident"] = (
+                sourceIncident
+            )
+
+        if score is not None:
+            attempt["score"] = score
+
+        self.attemptHistory.append(
+            attempt
+        )
+
+        return attempt
 
     def setPendingStrategy(self, strategy):
         self.pendingStrategy = strategy
@@ -57,6 +98,8 @@ class RecoverySession:
 
     def getState(self):
         return {
+            "runId": self.runId,
+            "createdAt": self.createdAt,
             "status": self.status,
             "incident": self.incident,
             "errorSignature": self.errorSignature,
