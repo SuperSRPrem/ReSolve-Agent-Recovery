@@ -113,11 +113,24 @@ def computeErrorSignature(incident):
     # 3. Recognize common failure patterns
     # --------------------------------------------------
 
+    # --------------------------------------------------
+    # 3. Recognize common failure patterns
+    # --------------------------------------------------
+
     knownPatterns = [
         (
             [
                 "connection refused",
-                "connection_refused"
+                "connection_refused",
+                "unable to establish a connection",
+                "unable to connect",
+                "cannot connect",
+                "can't connect",
+                "failed to connect",
+                "database connection error",
+                "database endpoint is not responding",
+                "database is not responding",
+                "postgresql database",
             ],
             "CONNECTION_REFUSED"
         ),
@@ -126,7 +139,8 @@ def computeErrorSignature(incident):
                 "connection timeout",
                 "connection timed out",
                 "timeout connecting",
-                "timed out"
+                "timed out",
+                "connection attempt timed out",
             ],
             "CONNECTION_TIMEOUT"
         ),
@@ -135,7 +149,9 @@ def computeErrorSignature(incident):
                 "authentication failed",
                 "auth failed",
                 "invalid credentials",
-                "credential failed"
+                "credential failed",
+                "login failed",
+                "access denied",
             ],
             "AUTH_FAILED"
         ),
@@ -143,14 +159,18 @@ def computeErrorSignature(incident):
             [
                 "database unavailable",
                 "database down",
-                "db unavailable"
+                "db unavailable",
+                "database is down",
+                "database service unavailable",
             ],
             "DATABASE_UNAVAILABLE"
         ),
         (
             [
                 "service unavailable",
-                "503"
+                "http 503",
+                "503 error",
+                "503",
             ],
             "SERVICE_UNAVAILABLE"
         ),
@@ -158,7 +178,7 @@ def computeErrorSignature(incident):
             [
                 "internal server error",
                 "http 500",
-                "500 error"
+                "500 error",
             ],
             "INTERNAL_SERVER_ERROR"
         ),
@@ -166,22 +186,25 @@ def computeErrorSignature(incident):
             [
                 "rate limit",
                 "too many requests",
-                "429"
+                "429",
             ],
             "RATE_LIMITED"
         ),
         (
             [
-                "cache",
-                "stale cache"
+                "stale cache",
+                "cache unavailable",
+                "cache error",
+                "redis unavailable",
+                "redis connection",
             ],
             "CACHE_FAILURE"
         ),
         (
             [
                 "out of memory",
+                "memory exhausted",
                 "oom",
-                "memory exhausted"
             ],
             "OUT_OF_MEMORY"
         ),
