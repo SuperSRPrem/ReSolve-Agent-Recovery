@@ -1,196 +1,766 @@
 import streamlit as st
 
-from backend.demo_agent import DemoAgent
+from frontend.styles import inject_styles
 
-
-st.set_page_config(
-    page_title="Recovery Memory",
-    layout="wide"
+from frontend.components import (
+    glass_heading,
+    json_panel,
+    metric_card,
+    render_attempts,
+    render_steps,
+    status_badge,
 )
 
-st.title("Recovery Memory")
-st.write("Reusable recovery memory for failed agent actions")
+from frontend.controller import (
+    approve_strategy,
+    build_incident,
+    reject_strategy,
+    run_local_recovery,
+    start_freshservice_recovery,
+)
 
-st.subheader("Current Incident")
 
-with st.form("incidentForm"):
-    title = st.text_input(
-        "Title",
-        "Database connection failures causing payment API errors"
+# =========================================================
+# PAGE
+# =========================================================
+
+st.set_page_config(
+    page_title="ReSolve",
+    page_icon=None,
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+inject_styles()
+
+
+# =========================================================
+# SESSION STATE
+# =========================================================
+
+defaults = {
+    "result": None,
+    "active_ticket_id": None,
+    "pending_session": None,
+    "mode": "Freshservice",
+}
+
+for key, value in defaults.items():
+
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+# =========================================================
+# SIDEBAR
+# =========================================================
+
+with st.sidebar:
+
+    st.markdown(
+        """
+        <div class="resolve-kicker">
+            Autonomous Recovery System
+        </div>
+
+        <div style="
+            font-size: 1.7rem;
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            margin-top: 0.2rem;
+        ">
+            ReSolve
+        </div>
+
+        <div style="
+            color: #8190a5;
+            font-size: 0.8rem;
+            margin-top: 0.35rem;
+            line-height: 1.5;
+        ">
+            Organizational recovery memory for
+            controlled agent remediation.
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    service = st.text_input(
-        "Service",
-        "Payments API"
+    st.divider()
+
+    mode = st.radio(
+        "Recovery source",
+        [
+            "Freshservice",
+            "Sandbox",
+        ],
     )
 
-    environment = st.text_input(
-        "Environment",
-        "production"
+    st.session_state.mode = mode
+
+    st.divider()
+
+    glass_heading("System")
+
+    st.markdown(
+        """
+        <div class="status-pill status-online">
+            BACKEND AVAILABLE
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    severity = st.text_input(
-        "Severity",
-        "high"
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.caption(
+        "Recovery actions are evaluated through "
+        "memory, policy and verification before "
+        "terminal resolution."
     )
 
-    symptomsText = st.text_area(
-        "Symptoms - one per line",
-        "Payment requests failing\nDatabase connections timing out\nHigh API response time"
+
+# =========================================================
+# HEADER
+# =========================================================
+
+header_left, header_right = st.columns([7, 2])
+
+with header_left:
+
+    st.markdown(
+        """
+        <div class="resolve-kicker">
+            INCIDENT RECOVERY CONSOLE
+        </div>
+
+        <div class="resolve-title">
+            Controlled recovery, backed by memory.
+        </div>
+
+        <div class="resolve-subtitle">
+            Inspect an incident, select a recovery path,
+            and keep human approval in the loop when required.
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    codesText = st.text_area(
-        "Error codes - one per line",
-        "DB_CONNECTION_TIMEOUT"
-    )
 
-    apiLatency = st.number_input(
-        "API latency in ms",
-        min_value=0,
-        value=4200
-    )
+with header_right:
 
-    databaseCpu = st.number_input(
-        "Database CPU percent",
-        min_value=0,
-        max_value=100,
-        value=88
-    )
+    current_status = "READY"
 
-    changeType = st.text_input(
-        "Recent change type",
-        "deployment"
-    )
-
-    changeDesc = st.text_input(
-        "Recent change description",
-        "Traffic increased after deployment"
-    )
-
-    changeMins = st.number_input(
-        "Minutes before incident",
-        min_value=0,
-        value=20
-    )
-
-    firstAction = st.text_input(
-        "First action attempted",
-        "Restart read replica"
-    )
-
-    retryResult = st.selectbox(
-        "Simulated recovery result",
-        ["success", "failed"]
-    )
-
-    runDemo = st.form_submit_button("Run Recovery")
-
-
-if runDemo:
-    symptoms = [
-        item.strip()
-        for item in symptomsText.splitlines()
-        if item.strip()
-    ]
-
-    errorCodes = [
-        item.strip()
-        for item in codesText.splitlines()
-        if item.strip()
-    ]
-
-    currentIncident = {
-        "title": title,
-        "service": service,
-        "environment": environment,
-        "severity": severity,
-        "symptoms": symptoms,
-        "errorCodes": errorCodes,
-        "metrics": {
-            "apiLatencyMs": apiLatency,
-            "databaseCpuPercent": databaseCpu
-        },
-        "recentChange": {
-            "type": changeType,
-            "description": changeDesc,
-            "minutesBeforeIncident": changeMins
-        },
-        "actionsTried": []
-    }
-
-    if not title.strip() or not firstAction.strip():
-        st.error("Title and first action are required.")
-    else:
-        agent = DemoAgent()
-
-        result = agent.runIncident(
-            currentIncident,
-            firstAction,
-            retryResult
+    if st.session_state.result:
+        current_status = st.session_state.result.get(
+            "status",
+            "UNKNOWN",
         )
 
-        st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
 
-        st.subheader("Current Incident")
+    status_badge(current_status)
 
-        st.json(currentIncident)
 
-        st.subheader("Agent Flow")
+st.markdown("<br>", unsafe_allow_html=True)
 
-        st.write("**1. Host agent action**")
-        st.write(firstAction)
 
-        st.error("Action failed")
+# =========================================================
+# FRESHSERVICE MODE
+# =========================================================
 
-        st.write("**2. Recovery Memory lookup**")
+if mode == "Freshservice":
 
-        if result["status"] == "NO_MATCH":
-            st.warning(result["message"])
+    tab_recovery, tab_result = st.tabs(
+        [
+            "Recovery",
+            "Execution",
+        ]
+    )
 
-            st.subheader("Attempts")
-            st.dataframe(
-                result["attempts"],
-                use_container_width=True
+    with tab_recovery:
+
+        left, right = st.columns([1.15, 0.85])
+
+        with left:
+
+            st.markdown(
+                '<div class="glass-card">',
+                unsafe_allow_html=True,
+            )
+
+            glass_heading("Freshservice Incident")
+
+            ticket_id = st.text_input(
+                "Ticket ID",
+                placeholder="e.g. 123",
+            )
+
+            first_action = st.text_area(
+                "Initial action attempted",
+                placeholder=(
+                    "Describe the action already attempted "
+                    "by the host agent."
+                ),
+                height=110,
+            )
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            start = st.button(
+                "Start Recovery",
+                type="primary",
+            )
+
+            st.markdown(
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+        with right:
+
+            st.markdown(
+                """
+                <div class="glass-card">
+                    <div class="section-label">
+                        Recovery Pipeline
+                    </div>
+
+                    <div style="
+                        line-height: 2;
+                        color: #b8c4d6;
+                        font-size: 0.88rem;
+                    ">
+                        Freshservice ticket<br>
+                        ↓<br>
+                        Incident mapping<br>
+                        ↓<br>
+                        Recovery memory<br>
+                        ↓<br>
+                        Risk evaluation<br>
+                        ↓<br>
+                        Approval or execution<br>
+                        ↓<br>
+                        Verification
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        if start:
+
+            if not ticket_id.strip():
+
+                st.error("A Freshservice ticket ID is required.")
+
+            elif not first_action.strip():
+
+                st.error(
+                    "Describe the initial action attempted."
+                )
+
+            else:
+
+                with st.spinner(
+                    "Loading incident and starting recovery..."
+                ):
+
+                    try:
+
+                        result = start_freshservice_recovery(
+                            ticket_id.strip(),
+                            first_action.strip(),
+                        )
+
+                        st.session_state.result = result
+                        st.session_state.active_ticket_id = (
+                            ticket_id.strip()
+                        )
+
+                        if result.get(
+                            "status"
+                        ) == "PENDING_APPROVAL":
+
+                            st.session_state.pending_session = (
+                                result.get("session")
+                            )
+
+                    except Exception as error:
+
+                        st.session_state.result = {
+                            "status": "ERROR",
+                            "message": str(error),
+                        }
+
+                st.rerun()
+
+
+    with tab_result:
+
+        result = st.session_state.result
+
+        if not result:
+
+            st.info(
+                "No Freshservice recovery has been started "
+                "in this session."
             )
 
         else:
-            st.write("Historical recovery found")
 
-            st.write("**3. Recovery action**")
-            st.write(result["recoveryAction"])
+            render_result(
+                result,
+                freshservice=True,
+            )
+
+
+# =========================================================
+# SANDBOX MODE
+# =========================================================
+
+else:
+
+    tab_incident, tab_result = st.tabs(
+        [
+            "Incident",
+            "Execution",
+        ]
+    )
+
+    with tab_incident:
+
+        with st.form("sandbox_incident_form"):
+
+            st.markdown(
+                '<div class="glass-card">',
+                unsafe_allow_html=True,
+            )
+
+            glass_heading("Incident Context")
 
             col1, col2 = st.columns(2)
 
             with col1:
-                st.metric(
-                    "Source incident",
-                    result["sourceIncident"]
+
+                title = st.text_input(
+                    "Title",
+                    value=(
+                        "Database connection failures "
+                        "causing payment API errors"
+                    ),
+                )
+
+                service = st.text_input(
+                    "Service",
+                    value="Payments API",
+                )
+
+                environment = st.selectbox(
+                    "Environment",
+                    [
+                        "production",
+                        "staging",
+                        "development",
+                    ],
+                )
+
+                severity = st.selectbox(
+                    "Severity",
+                    [
+                        "critical",
+                        "high",
+                        "medium",
+                        "low",
+                    ],
+                    index=1,
                 )
 
             with col2:
-                st.metric(
-                    "Recovery score",
-                    f'{result["score"]:.3f}'
+
+                api_latency = st.number_input(
+                    "API latency (ms)",
+                    min_value=0,
+                    value=4200,
                 )
 
-            st.write("**Recovery steps**")
+                database_cpu = st.number_input(
+                    "Database CPU (%)",
+                    min_value=0,
+                    max_value=100,
+                    value=88,
+                )
 
-            for number, step in enumerate(
-                result["steps"],
-                start=1
-            ):
-                st.write(f"{number}. {step}")
+                change_minutes = st.number_input(
+                    "Minutes before incident",
+                    min_value=0,
+                    value=20,
+                )
 
-            st.write("**4. Recovery evaluation**")
-
-            if result["status"] == "RECOVERED":
-                st.success("Recovery succeeded")
-            else:
-                st.error("Recovery failed")
-
-            st.subheader("Attempts")
-
-            st.dataframe(
-                result["attempts"],
-                use_container_width=True
+            symptoms = st.text_area(
+                "Symptoms",
+                value=(
+                    "Payment requests failing\n"
+                    "Database connections timing out\n"
+                    "High API response time"
+                ),
             )
+
+            error_codes = st.text_area(
+                "Error codes",
+                value="DB_CONNECTION_TIMEOUT",
+            )
+
+            change_col1, change_col2 = st.columns(2)
+
+            with change_col1:
+
+                change_type = st.text_input(
+                    "Recent change type",
+                    value="deployment",
+                )
+
+            with change_col2:
+
+                change_description = st.text_input(
+                    "Recent change description",
+                    value=(
+                        "Traffic increased after deployment"
+                    ),
+                )
+
+            st.markdown("<hr>", unsafe_allow_html=True)
+
+            glass_heading("Initial Recovery")
+
+            first_action = st.text_input(
+                "Action attempted",
+                value="Restart read replica",
+            )
+
+            retry_result = st.selectbox(
+                "Sandbox execution result",
+                [
+                    "success",
+                    "failed",
+                ],
+            )
+
+            submitted = st.form_submit_button(
+                "Run Recovery",
+                type="primary",
+            )
+
+            st.markdown(
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+        if submitted:
+
+            if not title.strip() or not first_action.strip():
+
+                st.error(
+                    "Title and recovery action are required."
+                )
+
+            else:
+
+                incident = build_incident(
+                    title=title,
+                    service=service,
+                    environment=environment,
+                    severity=severity,
+                    symptoms=symptoms,
+                    error_codes=error_codes,
+                    api_latency=api_latency,
+                    database_cpu=database_cpu,
+                    change_type=change_type,
+                    change_description=change_description,
+                    change_minutes=change_minutes,
+                )
+
+                with st.spinner(
+                    "Running recovery reasoning..."
+                ):
+
+                    try:
+
+                        result = run_local_recovery(
+                            incident,
+                            first_action,
+                            retry_result,
+                        )
+
+                        result["incident"] = incident
+
+                        st.session_state.result = result
+
+                    except Exception as error:
+
+                        st.session_state.result = {
+                            "status": "ERROR",
+                            "message": str(error),
+                            "incident": incident,
+                        }
+
+                st.rerun()
+
+
+    with tab_result:
+
+        result = st.session_state.result
+
+        if not result:
+
+            st.info(
+                "Configure an incident and run the recovery "
+                "pipeline."
+            )
+
+        else:
+
+            render_result(
+                result,
+                freshservice=False,
+            )
+
+
+# =========================================================
+# RESULT RENDERER
+# =========================================================
+
+def render_result(result, freshservice=False):
+
+    status = result.get(
+        "status",
+        "UNKNOWN",
+    )
+
+    # -----------------------------------------------------
+    # Top metrics
+    # -----------------------------------------------------
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+
+        metric_card(
+            "STATUS",
+            status,
+        )
+
+    with col2:
+
+        metric_card(
+            "RECOVERY SCORE",
+            (
+                f"{result['score']:.3f}"
+                if isinstance(
+                    result.get("score"),
+                    (int, float),
+                )
+                else "—"
+            ),
+        )
+
+    with col3:
+
+        metric_card(
+            "ATTEMPTS",
+            result.get(
+                "recoveryAttempts",
+                len(result.get("attempts", [])),
+            ),
+        )
+
+    with col4:
+
+        metric_card(
+            "SOURCE",
+            (
+                result.get("freshserviceTicketId")
+                if freshservice
+                else result.get(
+                    "sourceIncident",
+                    "Sandbox",
+                )
+            ),
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # -----------------------------------------------------
+    # Main result
+    # -----------------------------------------------------
+
+    if result.get("message"):
+
+        st.markdown(
+            '<div class="glass-card">',
+            unsafe_allow_html=True,
+        )
+
+        glass_heading("System Message")
+
+        st.write(result["message"])
+
+        st.markdown(
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    # -----------------------------------------------------
+    # Approval state
+    # -----------------------------------------------------
+
+    if status == "PENDING_APPROVAL":
+
+        st.warning(
+            "Recovery is paused pending human approval."
+        )
+
+        ticket_id = st.session_state.active_ticket_id
+        session = result.get(
+            "session",
+            st.session_state.pending_session,
+        )
+
+        approve_col, reject_col = st.columns(2)
+
+        with approve_col:
+
+            if st.button(
+                "Approve Strategy",
+                type="primary",
+            ):
+
+                try:
+
+                    with st.spinner(
+                        "Continuing approved recovery..."
+                    ):
+
+                        new_result = approve_strategy(
+                            ticket_id,
+                            session,
+                        )
+
+                    st.session_state.result = new_result
+
+                    st.rerun()
+
+                except Exception as error:
+
+                    st.error(str(error))
+
+        with reject_col:
+
+            if st.button(
+                "Reject Strategy"
+            ):
+
+                try:
+
+                    with st.spinner(
+                        "Selecting another recovery path..."
+                    ):
+
+                        new_result = reject_strategy(
+                            ticket_id,
+                            session,
+                        )
+
+                    st.session_state.result = new_result
+
+                    st.rerun()
+
+                except Exception as error:
+
+                    st.error(str(error))
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    # -----------------------------------------------------
+    # Recovery action
+    # -----------------------------------------------------
+
+    if result.get("recoveryAction"):
+
+        st.markdown(
+            '<div class="glass-card">',
+            unsafe_allow_html=True,
+        )
+
+        glass_heading("Selected Recovery Action")
+
+        st.code(
+            result["recoveryAction"],
+            language="text",
+        )
+
+        st.markdown(
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    # -----------------------------------------------------
+    # Recovery steps
+    # -----------------------------------------------------
+
+    if result.get("steps"):
+
+        glass_heading("Recovery Plan")
+
+        render_steps(
+            result["steps"]
+        )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    # -----------------------------------------------------
+    # Attempts
+    # -----------------------------------------------------
+
+    glass_heading("Execution History")
+
+    render_attempts(
+        result.get("attempts", [])
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # -----------------------------------------------------
+    # Incident
+    # -----------------------------------------------------
+
+    incident = result.get("incident")
+
+    if incident:
+
+        with st.expander(
+            "Incident Context",
+            expanded=False,
+        ):
+
+            json_panel(
+                "Mapped Incident",
+                incident,
+            )
+
+    # -----------------------------------------------------
+    # Raw result
+    # -----------------------------------------------------
+
+    with st.expander(
+        "Raw Recovery Result",
+        expanded=False,
+    ):
+
+        json_panel(
+            "Backend Response",
+            result,
+        )
