@@ -1,7 +1,8 @@
+import ast
 import json
 
 from backend.freshservice_mcp_client import (
-    FreshserviceMCPClient
+    FreshserviceMCPClient,
 )
 
 
@@ -10,23 +11,22 @@ class FreshserviceTicketService:
     High-level Freshservice ticket operations.
 
     This class hides raw MCP tool names and MCP response
-    structures from the rest of the ReSolve system.
+    structures from the rest of ReSolve.
 
-    Other components should use methods like:
+    Every public method returns:
 
-        getTickets()
-        getTicket()
-        getConversations()
-        addNote()
-        updateTicket()
-        resolveTicket()
-        createTicket()
-
-    instead of directly calling MCP tools.
+        {
+            "success": True / False,
+            "tool": "...",
+            "data": ...,
+            "error": None / "..."
+        }
     """
 
-    def __init__(self, client=None):
-
+    def __init__(
+        self,
+        client=None,
+    ):
         self.client = (
             client
             or FreshserviceMCPClient()
@@ -39,19 +39,21 @@ class FreshserviceTicketService:
     def _normalizeResponse(
         self,
         response,
-        toolName
+        toolName,
     ):
         """
         Converts raw MCP responses into a predictable format.
 
-        Every method in this service should return:
+        Important:
 
-        {
-            "success": True / False,
-            "tool": "...",
-            "data": ...,
-            "error": None / "..."
-        }
+        Some Freshservice MCP tools can return:
+
+            {
+                "success": True,
+                "data": "Error: ..."
+            }
+
+        ReSolve must not treat that as a successful operation.
         """
 
         if response is None:
@@ -59,160 +61,260 @@ class FreshserviceTicketService:
                 "success": False,
                 "tool": toolName,
                 "data": None,
-                "error": "Freshservice returned no response."
+                "error": (
+                    "Freshservice returned no response."
+                ),
             }
 
-        # --------------------------------------------------
-        # If FreshserviceMCPClient already returns a
-        # normalized response, preserve it.
-        # --------------------------------------------------
+        # ==================================================
+        # ALREADY-NORMALIZED DICTIONARY
+        # ==================================================
 
-        if isinstance(response, dict):
-
+        if isinstance(
+            response,
+            dict,
+        ):
             if "success" in response:
+                normalized = dict(
+                    response
+                )
 
-                response.setdefault(
+                normalized.setdefault(
                     "tool",
-                    toolName
+                    toolName,
                 )
 
-                response.setdefault(
+                normalized.setdefault(
                     "data",
-                    None
+                    None,
                 )
 
-                response.setdefault(
+                normalized.setdefault(
                     "error",
-                    None
+                    None,
                 )
 
-                return response
+                # MCP wrappers sometimes put a Python
+                # dictionary inside a success string.
+                normalized["data"] = (
+                    self._normalizeDataPayload(
+                        normalized.get(
+                            "data"
+                        )
+                    )
+                )
+
+                detectedError = (
+                    normalized.get(
+                        "error"
+                    )
+                    or self._extractError(
+                        normalized.get(
+                            "data"
+                        )
+                    )
+                )
+
+                if detectedError:
+                    normalized[
+                        "success"
+                    ] = False
+
+                    normalized[
+                        "error"
+                    ] = detectedError
+
+                return normalized
 
             # Raw dictionary response.
+            detectedError = (
+                self._extractError(
+                    response
+                )
+            )
+
             return {
-                "success": True,
+                "success": (
+                    detectedError is None
+                ),
                 "tool": toolName,
                 "data": response,
-                "error": None
+                "error": detectedError,
             }
 
-        # --------------------------------------------------
-        # MCP CallToolResult handling
-        # --------------------------------------------------
+        # ==================================================
+        # MCP CallToolResult
+        # ==================================================
 
         isError = getattr(
             response,
             "is_error",
-            False
+            False,
         )
 
         content = getattr(
             response,
             "content",
-            None
+            None,
         )
 
         if content:
-
             parsedContent = []
 
             for item in content:
-
                 text = getattr(
                     item,
                     "text",
-                    None
+                    None,
                 )
 
                 if text is None:
                     continue
 
                 parsedContent.append(
-                    self._parseTextContent(text)
+                    self._normalizeDataPayload(
+                        self._parseTextContent(
+                            text
+                        )
+                    )
                 )
 
-            if len(parsedContent) == 1:
+            if len(
+                parsedContent
+            ) == 1:
                 data = parsedContent[0]
+
             else:
                 data = parsedContent
 
-            error = self._extractError(
-                data
+            error = (
+                self._extractError(
+                    data
+                )
             )
 
-            if isError or error:
-
+            if (
+                isError
+                or error
+            ):
                 return {
                     "success": False,
                     "tool": toolName,
                     "data": data,
                     "error": (
                         error
-                        or "Freshservice MCP tool execution failed."
-                    )
+                        or (
+                            "Freshservice MCP tool "
+                            "execution failed."
+                        )
+                    ),
                 }
 
             return {
                 "success": True,
                 "tool": toolName,
                 "data": data,
-                "error": None
+                "error": None,
             }
 
-        # --------------------------------------------------
-        # Structured MCP content fallback
-        # --------------------------------------------------
+        # ==================================================
+        # STRUCTURED MCP CONTENT
+        # ==================================================
 
         structuredContent = getattr(
             response,
             "structured_content",
-            None
+            None,
         )
 
-        if structuredContent is not None:
+        if (
+            structuredContent
+            is not None
+        ):
+            detectedError = (
+                self._extractError(
+                    structuredContent
+                )
+            )
+
+            if (
+                isError
+                or detectedError
+            ):
+                return {
+                    "success": False,
+                    "tool": toolName,
+                    "data": structuredContent,
+                    "error": (
+                        detectedError
+                        or (
+                            "Freshservice MCP tool "
+                            "execution failed."
+                        )
+                    ),
+                }
 
             return {
-                "success": not isError,
+                "success": True,
                 "tool": toolName,
                 "data": structuredContent,
-                "error": (
-                    "Freshservice MCP tool execution failed."
+                "error": None,
+            }
+
+        # ==================================================
+        # FINAL FALLBACK
+        # ==================================================
+
+        text = str(
+            response
+        )
+
+        detectedError = (
+            self._extractError(
+                text
+            )
+        )
+
+        return {
+            "success": (
+                not isError
+                and detectedError is None
+            ),
+            "tool": toolName,
+            "data": text,
+            "error": (
+                detectedError
+                or (
+                    "Freshservice MCP tool "
+                    "execution failed."
                     if isError
                     else None
                 )
-            }
-
-        # --------------------------------------------------
-        # Final fallback
-        # --------------------------------------------------
-
-        return {
-            "success": not isError,
-            "tool": toolName,
-            "data": str(response),
-            "error": (
-                "Freshservice MCP tool execution failed."
-                if isError
-                else None
-            )
+            ),
         }
+
+    # ==================================================
+    # TEXT / PAYLOAD PARSING
+    # ==================================================
 
     def _parseTextContent(
         self,
-        text
+        text,
     ):
         """
         Freshservice MCP tools frequently return JSON
         inside TextContent.
-
-        Convert JSON strings into Python dictionaries
-        or lists when possible.
         """
 
-        if not isinstance(text, str):
+        if not isinstance(
+            text,
+            str,
+        ):
             return text
 
-        cleanedText = text.strip()
+        cleanedText = (
+            text.strip()
+        )
 
         if not cleanedText:
             return ""
@@ -225,75 +327,276 @@ class FreshserviceTicketService:
         except json.JSONDecodeError:
             return cleanedText
 
-    def _extractError(
+    def _normalizeDataPayload(
         self,
-        data
+        data,
     ):
         """
-        Looks for common error structures returned by
-        Freshservice or the MCP server.
+        Normalizes MCP payloads.
+
+        Example MCP response:
+
+            "Ticket created successfully:
+             {'ticket': {'id': 6, ...}}"
+
+        That is not JSON, but the payload after the prefix
+        is a safe Python literal. Parse it so callers receive
+        a normal dictionary and can access the ticket ID.
         """
 
-        if isinstance(data, dict):
+        if not isinstance(
+            data,
+            str,
+        ):
+            return data
 
-            if data.get("error"):
-                return str(
-                    data["error"]
+        text = data.strip()
+
+        if not text:
+            return text
+
+        # First attempt normal JSON.
+        try:
+            return json.loads(
+                text
+            )
+
+        except json.JSONDecodeError:
+            pass
+
+        # MCP package currently returns successful ticket
+        # operations using strings containing Python dicts.
+        lowered = text.lower()
+
+        if (
+            "successfully:"
+            in lowered
+        ):
+            markerIndex = (
+                lowered.find(
+                    "successfully:"
                 )
+            )
 
-            if data.get("message") and (
-                data.get("code")
-                or data.get("status")
-                or data.get("statusCode")
+            payload = text[
+                markerIndex
+                + len("successfully:")
+                :
+            ].strip()
+
+            if payload:
+                try:
+                    parsed = (
+                        ast.literal_eval(
+                            payload
+                        )
+                    )
+
+                    if isinstance(
+                        parsed,
+                        (
+                            dict,
+                            list,
+                        ),
+                    ):
+                        return parsed
+
+                except (
+                    ValueError,
+                    SyntaxError,
+                ):
+                    pass
+
+        return text
+
+    # ==================================================
+    # ERROR DETECTION
+    # ==================================================
+
+    def _extractError(
+        self,
+        data,
+    ):
+        """
+        Detects errors in structured and string MCP payloads.
+        """
+
+        if isinstance(
+            data,
+            str,
+        ):
+            text = data.strip()
+
+            lowered = (
+                text.lower()
+            )
+
+            # The Freshservice MCP package can return an error
+            # as ordinary text while still wrapping the call
+            # inside success=True.
+            if lowered.startswith(
+                "error:"
+            ):
+                return text
+
+            if lowered.startswith(
+                "error "
+            ):
+                return text
+
+            if lowered.startswith(
+                "failed:"
+            ):
+                return text
+
+            if (
+                "bad request"
+                in lowered
+                and (
+                    "400"
+                    in lowered
+                )
+            ):
+                return text
+
+            if (
+                "unauthorized"
+                in lowered
+                and (
+                    "401"
+                    in lowered
+                )
+            ):
+                return text
+
+            if (
+                "forbidden"
+                in lowered
+                and (
+                    "403"
+                    in lowered
+                )
+            ):
+                return text
+
+            return None
+
+        if isinstance(
+            data,
+            dict,
+        ):
+            if data.get(
+                "error"
             ):
                 return str(
-                    data["message"]
+                    data[
+                        "error"
+                    ]
                 )
 
-            if data.get("code") in [
+            if (
+                data.get(
+                    "message"
+                )
+                and (
+                    data.get(
+                        "code"
+                    )
+                    or data.get(
+                        "status"
+                    )
+                    or data.get(
+                        "statusCode"
+                    )
+                )
+            ):
+                return str(
+                    data[
+                        "message"
+                    ]
+                )
+
+            if data.get(
+                "code"
+            ) in [
                 "access_denied",
                 "unauthorized",
                 "forbidden",
-                "not_found"
+                "not_found",
             ]:
                 return str(
                     data.get(
                         "message",
-                        data["code"]
+                        data[
+                            "code"
+                        ],
                     )
                 )
 
+            # Inspect nested structures as well.
+            for value in (
+                data.values()
+            ):
+                nestedError = (
+                    self._extractError(
+                        value
+                    )
+                )
+
+                if nestedError:
+                    return nestedError
+
+            return None
+
+        if isinstance(
+            data,
+            list,
+        ):
+            for value in data:
+                nestedError = (
+                    self._extractError(
+                        value
+                    )
+                )
+
+                if nestedError:
+                    return nestedError
+
         return None
+
+    # ==================================================
+    # INTERNAL MCP CALL
+    # ==================================================
 
     def _call(
         self,
         toolName,
-        arguments=None
+        arguments=None,
     ):
-        """
-        Internal wrapper used by all Freshservice
-        operations.
-        """
-
         try:
-
-            response = self.client.callTool(
-                toolName,
-                arguments or {}
+            response = (
+                self.client.callTool(
+                    toolName,
+                    arguments
+                    or {},
+                )
             )
 
-            return self._normalizeResponse(
-                response,
-                toolName
+            return (
+                self._normalizeResponse(
+                    response,
+                    toolName,
+                )
             )
 
         except Exception as error:
-
             return {
                 "success": False,
                 "tool": toolName,
                 "data": None,
-                "error": str(error)
+                "error": str(
+                    error
+                ),
             }
 
     # ==================================================
@@ -303,27 +606,27 @@ class FreshserviceTicketService:
     def getTickets(
         self,
         page=1,
-        perPage=30
+        perPage=30,
     ):
-
         return self._call(
             "get_tickets",
             {
                 "page": page,
-                "per_page": perPage
-            }
+                "per_page": perPage,
+            },
         )
 
     def getTicket(
         self,
-        ticketId
+        ticketId,
     ):
-
         return self._call(
             "get_ticket_by_id",
             {
-                "ticket_id": ticketId
-            }
+                "ticket_id": (
+                    ticketId
+                ),
+            },
         )
 
     # ==================================================
@@ -332,14 +635,15 @@ class FreshserviceTicketService:
 
     def getConversations(
         self,
-        ticketId
+        ticketId,
     ):
-
         return self._call(
             "list_all_ticket_conversation",
             {
-                "ticket_id": ticketId
-            }
+                "ticket_id": (
+                    ticketId
+                ),
+            },
         )
 
     # ==================================================
@@ -349,15 +653,16 @@ class FreshserviceTicketService:
     def addNote(
         self,
         ticketId,
-        body
+        body,
     ):
-
         return self._call(
             "create_ticket_note",
             {
-                "ticket_id": ticketId,
-                "body": body
-            }
+                "ticket_id": (
+                    ticketId
+                ),
+                "body": body,
+            },
         )
 
     # ==================================================
@@ -367,15 +672,18 @@ class FreshserviceTicketService:
     def updateTicket(
         self,
         ticketId,
-        ticketFields
+        ticketFields,
     ):
-
         return self._call(
             "update_ticket",
             {
-                "ticket_id": ticketId,
-                "ticket_fields": ticketFields
-            }
+                "ticket_id": (
+                    ticketId
+                ),
+                "ticket_fields": (
+                    ticketFields
+                ),
+            },
         )
 
     # ==================================================
@@ -384,20 +692,39 @@ class FreshserviceTicketService:
 
     def resolveTicket(
         self,
-        ticketId
+        ticketId,
+        resolutionNotes=None,
     ):
         """
         Freshservice status:
 
             4 = Resolved
             5 = Closed
+
+        Freshservice may require resolution notes when
+        resolving a ticket.
+
+        ReSolve therefore always provides a resolution note
+        with the status transition.
         """
+
+        if not resolutionNotes:
+            resolutionNotes = (
+                "Resolved by ReSolve after the recovery "
+                "action completed and independent "
+                "post-recovery verification confirmed "
+                "that the expected service state was "
+                "restored."
+            )
 
         return self.updateTicket(
             ticketId,
             {
-                "status": 4
-            }
+                "status": 4,
+                "resolution_notes": (
+                    resolutionNotes
+                ),
+            },
         )
 
     # ==================================================
@@ -413,34 +740,40 @@ class FreshserviceTicketService:
         status=2,
         email=None,
         requesterId=None,
-        customFields=None
+        customFields=None,
     ):
-
         arguments = {
             "subject": subject,
-            "description": description,
+            "description": (
+                description
+            ),
             "source": source,
             "priority": priority,
-            "status": status
+            "status": status,
         }
 
         if email is not None:
+            arguments[
+                "email"
+            ] = email
 
-            arguments["email"] = email
-
-        if requesterId is not None:
-
+        if (
+            requesterId
+            is not None
+        ):
             arguments[
                 "requester_id"
             ] = requesterId
 
-        if customFields is not None:
-
+        if (
+            customFields
+            is not None
+        ):
             arguments[
                 "custom_fields"
             ] = customFields
 
         return self._call(
             "create_ticket",
-            arguments
+            arguments,
         )
