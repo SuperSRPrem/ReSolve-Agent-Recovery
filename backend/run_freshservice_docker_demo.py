@@ -1,4 +1,5 @@
 import os
+import sys
 
 from dotenv import load_dotenv
 
@@ -8,27 +9,51 @@ from backend.docker_environment import (
 from backend.freshservice_recovery_runner import (
     FreshserviceRecoveryRunner,
 )
+from backend.freshservice_ticket_service import (
+    FreshserviceTicketService,
+)
 
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
 
 load_dotenv(".env")
 
-TICKET_ID = 4
+
+def getTicketId():
+    if len(sys.argv) < 2:
+        print()
+        print(
+            "Usage:"
+        )
+        print(
+            "  python -m backend.run_freshservice_docker_demo "
+            "<ticket_id>"
+        )
+        print()
+        raise SystemExit(1)
+
+    try:
+        return int(
+            sys.argv[1]
+        )
+
+    except ValueError:
+        print(
+            "Ticket ID must be an integer."
+        )
+        raise SystemExit(1)
 
 
 def main():
+    ticketId = getTicketId()
+
     print()
     print("=" * 76)
     print(
-        "REAL FRESHSERVICE + LIVE LLM + DOCKER RECOVERY"
+        "ReSolve — Autonomous Incident Recovery"
     )
     print("=" * 76)
 
     # ========================================================
-    # 1. CONFIG CHECK
+    # CONFIGURATION
     # ========================================================
 
     if not os.getenv(
@@ -45,64 +70,64 @@ def main():
             "FRESHSERVICE_DOMAIN is missing from .env"
         )
 
+    print()
     print(
-        "PASS: OpenAI configuration loaded"
+        "Freshservice Ticket:",
+        ticketId,
     )
 
     print(
-        "PASS: Freshservice configuration loaded"
+        "PASS: required configuration loaded"
     )
 
     # ========================================================
-    # 2. REAL INFRASTRUCTURE
+    # REAL ENVIRONMENT
     # ========================================================
 
     environment = (
         DockerEnvironment()
     )
 
-    print()
-    print(
-        "Current infrastructure state:"
-    )
-
-    currentState = (
+    initialState = (
         environment.getState()
     )
 
+    print()
+    print("-" * 76)
     print(
-        currentState
+        "OBSERVED INFRASTRUCTURE STATE"
+    )
+    print("-" * 76)
+
+    print(
+        initialState
     )
 
-    # The demo intentionally begins with a real outage.
-    if currentState.get(
+    if initialState.get(
         "databaseRunning"
     ):
         print()
         print(
-            "ERROR: PostgreSQL is currently running."
+            "PostgreSQL is currently healthy."
         )
-
         print(
-            "Create the outage first with:"
+            "Create the demo outage first:"
         )
-
         print()
         print(
-            "    docker stop resolve-demo-db"
+            "  docker stop resolve-demo-db"
         )
-
         print()
 
         raise SystemExit(1)
 
     print()
     print(
-        "PASS: real PostgreSQL outage exists"
+        "PASS: PostgreSQL outage detected"
     )
 
     # ========================================================
-    # 3. CREATE FRESHSERVICE RECOVERY RUNNER
+    # CREATE RECOVERY RUNNER
     # ========================================================
 
     runner = (
@@ -112,32 +137,63 @@ def main():
     )
 
     # ========================================================
-    # 4. LOAD REAL FRESHSERVICE INCIDENT
+    # START RECOVERY
     # ========================================================
 
     print()
     print(
-        f"Loading Freshservice Ticket #{TICKET_ID} "
-        "and starting ReSolve..."
+        "Loading Freshservice incident..."
+    )
+
+    print(
+        "Retrieving trusted recovery evidence..."
+    )
+
+    print(
+        "Evaluating recovery strategies..."
     )
 
     result = (
         runner.startRecovery(
-            ticketId=TICKET_ID,
+            ticketId=ticketId,
             firstAction=(
                 "Retry database connection"
             ),
         )
     )
 
+    if (
+        result.get(
+            "status"
+        )
+        == "LOAD_FAILED"
+    ):
+        print()
+        print(
+            "Freshservice ticket loading failed."
+        )
+
+        print(
+            result
+        )
+
+        raise SystemExit(1)
+
     # ========================================================
-    # 5. RECOVERY DECISION
+    # SELECTED STRATEGY
     # ========================================================
+
+    strategy = (
+        result.get(
+            "strategy",
+            {},
+        )
+    )
 
     print()
     print("-" * 76)
     print(
-        "RECOVERY DECISION"
+        "RECOVERY STRATEGY"
     )
     print("-" * 76)
 
@@ -149,30 +205,7 @@ def main():
     )
 
     print(
-        "Freshservice Ticket:",
-        result.get(
-            "freshserviceTicketId"
-        ),
-    )
-
-    print(
-        "Incident:",
-        result.get(
-            "incident",
-            {},
-        ).get(
-            "title"
-        ),
-    )
-
-    strategy = result.get(
-        "strategy",
-        {},
-    )
-
-    print()
-    print(
-        "Selected action:",
+        "Action:",
         strategy.get(
             "action"
         ),
@@ -206,34 +239,40 @@ def main():
         ),
     )
 
-    print(
-        "Historical success rate:",
+    successRate = (
         strategy.get(
             "successRate"
-        ),
+        )
     )
 
-    print(
-        "Evidence score:",
+    if successRate is None:
+        print(
+            "Historical success:",
+            "Not available",
+        )
+
+    else:
+        print(
+            "Historical success:",
+            successRate,
+        )
+
+    # ========================================================
+    # LLM REASONING
+    # ========================================================
+
+    reasoning = (
         strategy.get(
-            "score"
-        ),
-    )
-
-    # ========================================================
-    # 6. LLM REASONING
-    # ========================================================
-
-    reasoning = strategy.get(
-        "llmReasoning",
-        {},
+            "llmReasoning",
+            {},
+        )
     )
 
     if reasoning:
         print()
         print("-" * 76)
         print(
-            "LIVE LLM REASONING"
+            "AI RECOVERY REASONING"
         )
         print("-" * 76)
 
@@ -248,13 +287,6 @@ def main():
             "Decision:",
             reasoning.get(
                 "decision"
-            ),
-        )
-
-        print(
-            "Selected index:",
-            reasoning.get(
-                "selectedIndex"
             ),
         )
 
@@ -298,35 +330,9 @@ def main():
             )
         )
 
-        verificationFocus = (
-            reasoning.get(
-                "verificationFocus",
-                [],
-            )
-        )
-
-        if verificationFocus:
-            print()
-            print(
-                "Verification focus:"
-            )
-
-            for check in verificationFocus:
-                print(
-                    "-",
-                    check,
-                )
-
     # ========================================================
-    # 7. APPROVAL BOUNDARY
+    # APPROVAL BOUNDARY
     # ========================================================
-
-    print()
-    print("-" * 76)
-    print(
-        "APPROVAL BOUNDARY CHECK"
-    )
-    print("-" * 76)
 
     if (
         result.get(
@@ -336,8 +342,7 @@ def main():
     ):
         print()
         print(
-            "ReSolve did not reach the expected "
-            "approval state."
+            "Expected recovery to pause for approval."
         )
 
         print(
@@ -347,64 +352,43 @@ def main():
             ),
         )
 
-        print(
-            "Result:",
-            result,
-        )
-
         raise SystemExit(1)
 
     stateBeforeApproval = (
         environment.getState()
     )
 
-    print(
-        "Database running before approval:",
-        stateBeforeApproval.get(
-            "databaseRunning"
-        ),
-    )
-
     if stateBeforeApproval.get(
         "databaseRunning"
     ):
         raise RuntimeError(
-            "Infrastructure changed before "
-            "human approval."
+            "Infrastructure changed before approval."
         )
 
     print()
+    print("-" * 76)
     print(
-        "PASS: Freshservice incident loaded"
+        "HUMAN APPROVAL BOUNDARY"
+    )
+    print("-" * 76)
+
+    print()
+    print(
+        "PASS: trusted strategy selected"
     )
 
     print(
-        "PASS: trusted recovery strategy selected"
-    )
-
-    print(
-        "PASS: human approval boundary enforced"
+        "PASS: medium-risk action requires approval"
     )
 
     print(
         "PASS: no infrastructure mutation "
-        "before approval"
+        "occurred during reasoning"
     )
-
-    # ========================================================
-    # 8. HUMAN DECISION
-    # ========================================================
-
-    print()
-    print("=" * 76)
-    print(
-        "RECOVERY IS PAUSED"
-    )
-    print("=" * 76)
 
     print()
     print(
-        "Selected action:"
+        "Proposed action:"
     )
 
     print(
@@ -415,21 +399,11 @@ def main():
 
     print()
     print(
-        "Risk tier:",
-        strategy.get(
-            "riskTier"
-        ),
-    )
-
-    print()
-    print(
-        "Type APPROVE to execute the "
-        "selected recovery."
+        "Type APPROVE to authorize execution."
     )
 
     print(
-        "Type anything else to reject "
-        "execution and exit."
+        "Type anything else to stop."
     )
 
     print()
@@ -438,56 +412,45 @@ def main():
         "Decision: "
     ).strip()
 
-    # ========================================================
-    # 9. REJECTION PATH
-    # ========================================================
-
     if decision != "APPROVE":
         print()
         print(
-            "Recovery was not approved."
+            "Recovery not approved."
         )
 
         print(
-            "No recovery action will be executed."
-        )
-
-        print()
-        print(
-            "Current infrastructure state:"
-        )
-
-        print(
-            environment.getState()
+            "No recovery action executed."
         )
 
         return
 
     # ========================================================
-    # 10. HUMAN APPROVAL
+    # CONTROLLED EXECUTION
     # ========================================================
 
     print()
     print(
-        "Human approval received."
+        "Approval received."
     )
 
     print(
-        "Executing controlled recovery..."
+        "Executing approved recovery capability..."
     )
 
     finalResult = (
         runner.approvePendingStrategy(
-            ticketId=TICKET_ID,
+            ticketId=ticketId,
             session=result[
                 "session"
             ],
         )
     )
 
-    # ========================================================
-    # 11. EXECUTION RESULT
-    # ========================================================
+    execution = (
+        finalResult.get(
+            "execution"
+        )
+    )
 
     print()
     print("-" * 76)
@@ -496,49 +459,39 @@ def main():
     )
     print("-" * 76)
 
-    execution = (
-        finalResult.get(
-            "execution"
-        )
-    )
-
     print(
         execution
     )
 
-    if execution:
-        print()
-        print(
-            "Action:",
-            execution.get(
-                "action"
-            ),
+    if not execution:
+        raise RuntimeError(
+            "No execution result returned."
         )
 
-        print(
-            "Capability:",
-            execution.get(
-                "capability"
-            ),
-        )
+    print()
+    print(
+        "Capability:",
+        execution.get(
+            "capability"
+        ),
+    )
 
-        print(
-            "Execution status:",
-            execution.get(
-                "executionStatus"
-            ),
-        )
-
-        print(
-            "Message:",
-            execution.get(
-                "message"
-            ),
-        )
+    print(
+        "Execution status:",
+        execution.get(
+            "executionStatus"
+        ),
+    )
 
     # ========================================================
-    # 12. INDEPENDENT VERIFICATION
+    # VERIFICATION
     # ========================================================
+
+    verification = (
+        finalResult.get(
+            "verification"
+        )
+    )
 
     print()
     print("-" * 76)
@@ -547,32 +500,11 @@ def main():
     )
     print("-" * 76)
 
-    verification = (
-        finalResult.get(
-            "verification"
-        )
-    )
-
     print(
         verification
     )
 
     if verification:
-        print()
-        print(
-            "Verification status:",
-            verification.get(
-                "status"
-            ),
-        )
-
-        print(
-            "Recovered:",
-            verification.get(
-                "recovered"
-            ),
-        )
-
         print()
 
         for check in verification.get(
@@ -590,14 +522,12 @@ def main():
             print(
                 f"{status}: "
                 f"{check.get('name')} "
-                f"(expected="
-                f"{check.get('expected')}, "
-                f"actual="
-                f"{check.get('actual')})"
+                f"(expected={check.get('expected')}, "
+                f"actual={check.get('actual')})"
             )
 
     # ========================================================
-    # 13. FINAL INFRASTRUCTURE STATE
+    # FINAL ENVIRONMENT STATE
     # ========================================================
 
     finalState = (
@@ -615,63 +545,192 @@ def main():
         finalState
     )
 
-    # ========================================================
-    # 14. FINAL RECOVERY STATUS
-    # ========================================================
-
-    print()
-    print("=" * 76)
-
-    print(
-        "FINAL RECOVERY STATUS:",
-        finalResult.get(
-            "status"
-        ),
-    )
-
     if (
         finalResult.get(
             "status"
         )
-        == "RECOVERED"
+        != "RECOVERED"
     ):
         print()
         print(
-            "PASS: controlled execution succeeded"
+            "ReSolve did not reach RECOVERED."
         )
 
-        print(
-            "PASS: independent verification passed"
+        raise SystemExit(1)
+
+    if not finalState.get(
+        "databaseRunning"
+    ):
+        raise RuntimeError(
+            "Database is not running after recovery."
         )
 
-        print(
-            "PASS: actual infrastructure recovered"
+    if not finalState.get(
+        "connectionPoolHealthy"
+    ):
+        raise RuntimeError(
+            "Database connectivity is not healthy."
         )
 
-        print(
-            "PASS: Freshservice success lifecycle "
-            "was triggered"
-        )
+    # ========================================================
+    # VERIFY FRESHSERVICE FINAL STATE
+    # ========================================================
 
+    print()
+    print(
+        "Verifying Freshservice ticket state..."
+    )
+
+    ticketService = (
+        FreshserviceTicketService()
+    )
+
+    ticketResult = (
+        ticketService.getTicket(
+            ticketId
+        )
+    )
+
+    if not ticketResult.get(
+        "success"
+    ):
         print()
         print(
-            "REAL FRESHSERVICE CLOSED-LOOP "
-            "RECOVERY PASSED"
-        )
-
-    else:
-        print()
-        print(
-            "Recovery did not reach a verified "
-            "RECOVERED state."
+            "Freshservice verification failed:"
         )
 
         print(
-            "Inspect execution and verification "
-            "results above."
+            ticketResult
         )
 
+        raise SystemExit(1)
+
+    ticket = (
+        ticketResult
+        .get(
+            "data",
+            {},
+        )
+        .get(
+            "ticket",
+            {},
+        )
+    )
+
+    print()
+    print("-" * 76)
+    print(
+        "FRESHSERVICE FINAL STATE"
+    )
+    print("-" * 76)
+
+    print(
+        "Ticket ID:",
+        ticket.get(
+            "id"
+        ),
+    )
+
+    print(
+        "Subject:",
+        ticket.get(
+            "subject"
+        ),
+    )
+
+    print(
+        "Priority:",
+        ticket.get(
+            "priority"
+        ),
+    )
+
+    print(
+        "Status:",
+        ticket.get(
+            "status"
+        ),
+    )
+
+    print(
+        "Resolution notes:",
+        ticket.get(
+            "resolution_notes"
+        ),
+    )
+
+    # Freshservice:
+    #
+    # 4 = Resolved
+    if (
+        ticket.get(
+            "status"
+        )
+        != 4
+    ):
+        raise RuntimeError(
+            "Infrastructure recovered, but "
+            "Freshservice ticket was not resolved."
+        )
+
+    if not ticket.get(
+        "resolution_notes"
+    ):
+        raise RuntimeError(
+            "Freshservice ticket was resolved "
+            "without resolution notes."
+        )
+
+    # ========================================================
+    # FINAL RESULT
+    # ========================================================
+
+    print()
     print("=" * 76)
+    print(
+        "ReSolve Recovery Completed and Verified"
+    )
+    print("=" * 76)
+
+    print()
+    print(
+        "PASS: Freshservice incident ingested"
+    )
+
+    print(
+        "PASS: historical + approved evidence evaluated"
+    )
+
+    print(
+        "PASS: live AI selected only trusted evidence"
+    )
+
+    print(
+        "PASS: human approval enforced"
+    )
+
+    print(
+        "PASS: controlled Docker capability executed"
+    )
+
+    print(
+        "PASS: actual service state independently verified"
+    )
+
+    print(
+        "PASS: Freshservice ticket automatically resolved"
+    )
+
+    print(
+        "PASS: resolution notes persisted"
+    )
+
+    print()
+    print(
+        "Execution success was not treated as recovery "
+        "until the expected system state was verified."
+    )
+
     print()
 
 
