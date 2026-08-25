@@ -1,0 +1,34 @@
+[
+  {
+    "runbookId": "RUNBOOK-DB-RESTART-001",
+    "title": "Recover unavailable PostgreSQL service",
+    "description": "Restart the approved PostgreSQL service when the database service is unavailable or refusing connections.",
+    "approved": true,
+    "enabled": true,
+    "errorSignatures": [
+      "CONNECTION_REFUSED",
+      "DATABASE_UNAVAILABLE"
+    ],
+    "keywords": [
+      "postgresql",
+      "postgres",
+      "database",
+      "connection refused",
+      "database unavailable",
+      "unable to connect"
+    ],
+    "action": "Restart PostgreSQL database",
+    "steps": [
+      "Restart the approved PostgreSQL service.",
+      "Wait for the database service to become available.",
+      "Verify database connectivity.",
+      "Verify application health."
+    ],
+    "verificationFocus": [
+      "databaseRunning",
+      "connectionPoolHealthy",
+      "apiHealthy"
+    ],
+    "source": "approved-runbook"
+  }
+]
