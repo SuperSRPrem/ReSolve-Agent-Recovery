@@ -1,0 +1,26 @@
+services:
+  resolve-demo-service:
+    build:
+      context: ./service
+
+    container_name: resolve-demo-service
+
+    ports:
+      - "18080:8080"
+
+    restart: "no"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "-",
+          "http://127.0.0.1:8080/health"
+        ]
+
+      interval: 3s
+      timeout: 2s
+      retries: 3
