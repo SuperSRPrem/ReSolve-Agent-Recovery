@@ -728,6 +728,63 @@ class FreshserviceTicketService:
         )
 
     # ==================================================
+    # CREATE TICKET FROM FRESHSERVICE-LIKE FORM
+    # ==================================================
+
+    def createTicketFromForm(self, form):
+        """
+        Create a ticket from the manual ReSolve form.
+
+        The payload is normalized first, then restricted to the
+        arguments exposed by the currently installed MCP tool when
+        its schema is available. This prevents ReSolve from blindly
+        sending unsupported optional fields.
+        """
+
+        from backend.incident_intake import IncidentIntake
+
+        normalized = IncidentIntake.toTicketPayload(form)
+
+        if not normalized["success"]:
+            return {
+                "success": False,
+                "tool": "create_ticket",
+                "data": None,
+                "error": "; ".join(normalized["errors"]),
+                "validationErrors": normalized["errors"],
+            }
+
+        payload = normalized["payload"]
+
+        try:
+            schema = self.client.getToolSchema("create_ticket")
+            properties = (
+                (schema or {})
+                .get("inputSchema", {})
+                .get("properties", {})
+            )
+
+            if properties:
+                payload = {
+                    key: value
+                    for key, value in payload.items()
+                    if key in properties
+                }
+
+        except Exception:
+            # Schema discovery is a safety enhancement, not a
+            # requirement for normal ticket creation.
+            pass
+
+        result = self._call(
+            "create_ticket",
+            payload,
+        )
+
+        result["submittedPayload"] = payload
+        return result
+
+    # ==================================================
     # CREATE TICKET
     # ==================================================
 

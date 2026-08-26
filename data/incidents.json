@@ -245,12 +245,12 @@
     },
     "resolutionStats": {
       "overall": {
-        "successCount": 11,
+        "successCount": 12,
         "failureCount": 1
       },
       "conditioned": {
         "CONNECTION_REFUSED": {
-          "successCount": 7,
+          "successCount": 8,
           "failureCount": 1
         }
       }

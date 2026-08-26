@@ -28,8 +28,8 @@ class IncidentEmbedder:
         actions = []
 
         for action in incident.get("actionsTried", []):
-            actionText = action.get("action", "")
-            result = action.get("result", "")
+            actionText = action.get("action") or ""
+            result = action.get("result") or ""
             actions.append(actionText + " - " + result)
 
         if len(actions) == 0:

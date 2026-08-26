@@ -544,5 +544,111 @@
       "credentialsHealthy": true,
       "errorSignature": "unknown"
     }
+  },
+  {
+    "runId": "RUN-ED6EB8ADF8E0",
+    "createdAt": "2026-08-26T10:10:13.322233+00:00",
+    "updatedAt": "2026-08-26T10:12:45.361104+00:00",
+    "incident": {
+      "incidentId": "INC-9",
+      "title": "Production PostgreSQL database unavailable",
+      "service": "Incident",
+      "severity": "urgent",
+      "environment": "unknown",
+      "symptoms": [
+        "The production backend is currently unable to establish a connection with the PostgreSQL database. The backend service remains running, but database-dependent requests are failing with connection errors. Initial checks show that the PostgreSQL endpoint is not responding. No recent connection-pool configuration change has been reported. Recovery assistance is required."
+      ],
+      "errorCodes": [],
+      "description": ""
+    },
+    "errorSignature": "CONNECTION_REFUSED",
+    "status": "RECOVERED",
+    "reason": null,
+    "recoveryAttempts": 1,
+    "attempts": [
+      {
+        "attemptNumber": 1,
+        "action": null,
+        "result": "failed",
+        "errorSignature": "CONNECTION_REFUSED",
+        "note": "Initial host agent action failed before recovery memory was consulted."
+      },
+      {
+        "attemptNumber": 2,
+        "action": "Restore previous connection pool configuration",
+        "result": "pending-approval",
+        "errorSignature": "CONNECTION_REFUSED",
+        "note": "Medium risk strategy requires human approval.",
+        "riskTier": "medium",
+        "approval": {
+          "approved": false,
+          "status": "approval-required"
+        },
+        "sourceIncident": "INC-1421",
+        "score": 0.7286479079723358
+      },
+      {
+        "attemptNumber": 3,
+        "action": "Restore previous connection pool configuration",
+        "result": "success",
+        "errorSignature": "CONNECTION_REFUSED",
+        "note": "Recovery verified successfully.",
+        "riskTier": "medium",
+        "approval": {
+          "approved": true,
+          "status": "human-approved"
+        },
+        "sourceIncident": "INC-1421",
+        "score": 0.7286479079723358,
+        "execution": {
+          "action": "Restore previous connection pool configuration",
+          "capability": "restore_connection_pool",
+          "executionStatus": "success",
+          "message": "Previous connection pool configuration restored successfully.",
+          "state": {
+            "databaseRunning": true,
+            "backendRunning": true,
+            "apiHealthy": false,
+            "cacheHealthy": true,
+            "connectionPoolHealthy": true,
+            "replicaHealthy": false,
+            "configurationHealthy": false,
+            "credentialsHealthy": true,
+            "errorSignature": "unknown"
+          }
+        },
+        "verification": {
+          "status": "VERIFIED",
+          "recovered": true,
+          "errorSignature": "CONNECTION_REFUSED",
+          "checks": [
+            {
+              "name": "databaseRunning",
+              "expected": true,
+              "actual": true,
+              "passed": true
+            },
+            {
+              "name": "connectionPoolHealthy",
+              "expected": true,
+              "actual": true,
+              "passed": true
+            }
+          ],
+          "message": "Recovery verified successfully."
+        }
+      }
+    ],
+    "finalEnvironmentState": {
+      "databaseRunning": true,
+      "backendRunning": true,
+      "apiHealthy": false,
+      "cacheHealthy": true,
+      "connectionPoolHealthy": true,
+      "replicaHealthy": false,
+      "configurationHealthy": false,
+      "credentialsHealthy": true,
+      "errorSignature": "unknown"
+    }
   }
 ]
