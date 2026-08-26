@@ -297,13 +297,17 @@
     },
     "resolutionStats": {
       "overall": {
-        "successCount": 8,
+        "successCount": 9,
         "failureCount": 3
       },
       "conditioned": {
         "CONNECTION_REFUSED": {
           "successCount": 0,
           "failureCount": 1
+        },
+        "SERVICE_UNAVAILABLE": {
+          "successCount": 1,
+          "failureCount": 0
         }
       }
     },

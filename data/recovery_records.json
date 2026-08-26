@@ -650,5 +650,228 @@
       "credentialsHealthy": true,
       "errorSignature": "unknown"
     }
+  },
+  {
+    "runId": "RUN-F6F3A7026DA9",
+    "createdAt": "2026-08-26T12:10:41.152156+00:00",
+    "updatedAt": "2026-08-26T12:12:21.023454+00:00",
+    "incident": {
+      "incidentId": "INC-11",
+      "title": "HTTP 503 errors from unhealthy API workers",
+      "service": "Incident",
+      "severity": "low",
+      "environment": "unknown",
+      "symptoms": [
+        "The production payments API is returning repeated HTTP 503 responses.\nSeveral API workers are reporting an unhealthy state while the database\nremains available and database CPU is normal. No recent deployment has\nbeen performed. Requests are intermittently failing and recovery\nassistance is required."
+      ],
+      "errorCodes": [],
+      "description": ""
+    },
+    "errorSignature": "SERVICE_UNAVAILABLE",
+    "status": "RECOVERED",
+    "reason": null,
+    "recoveryAttempts": 1,
+    "attempts": [
+      {
+        "attemptNumber": 1,
+        "action": null,
+        "result": "failed",
+        "errorSignature": "SERVICE_UNAVAILABLE",
+        "note": "Initial host agent action failed before recovery memory was consulted."
+      },
+      {
+        "attemptNumber": 2,
+        "action": "Restart unhealthy API workers",
+        "result": "pending-approval",
+        "errorSignature": "SERVICE_UNAVAILABLE",
+        "note": "Medium risk strategy requires human approval.",
+        "riskTier": "medium",
+        "approval": {
+          "approved": false,
+          "status": "approval-required"
+        },
+        "sourceIncident": "INC-1458",
+        "score": 0.7848976728049192
+      },
+      {
+        "attemptNumber": 3,
+        "action": "Restart unhealthy API workers",
+        "result": "success",
+        "errorSignature": "SERVICE_UNAVAILABLE",
+        "note": "Recovery verified successfully.",
+        "riskTier": "medium",
+        "approval": {
+          "approved": true,
+          "status": "human-approved"
+        },
+        "sourceIncident": "INC-1458",
+        "score": 0.7848976728049192,
+        "execution": {
+          "action": "Restart unhealthy API workers",
+          "capability": "restart_api_workers",
+          "executionStatus": "success",
+          "message": "API worker restart capability executed successfully.",
+          "state": {
+            "databaseRunning": false,
+            "backendRunning": true,
+            "apiHealthy": true,
+            "cacheHealthy": true,
+            "connectionPoolHealthy": false,
+            "replicaHealthy": false,
+            "configurationHealthy": false,
+            "credentialsHealthy": true,
+            "errorSignature": "unknown"
+          }
+        },
+        "verification": {
+          "status": "VERIFIED",
+          "recovered": true,
+          "errorSignature": "SERVICE_UNAVAILABLE",
+          "checks": [
+            {
+              "name": "backendRunning",
+              "expected": true,
+              "actual": true,
+              "passed": true
+            },
+            {
+              "name": "apiHealthy",
+              "expected": true,
+              "actual": true,
+              "passed": true
+            }
+          ],
+          "message": "Recovery verified successfully."
+        }
+      }
+    ],
+    "finalEnvironmentState": {
+      "databaseRunning": false,
+      "backendRunning": true,
+      "apiHealthy": true,
+      "cacheHealthy": true,
+      "connectionPoolHealthy": false,
+      "replicaHealthy": false,
+      "configurationHealthy": false,
+      "credentialsHealthy": true,
+      "errorSignature": "unknown"
+    }
+  },
+  {
+    "runId": "RUN-92A2774100E2",
+    "createdAt": "2026-08-26T12:38:10.721255+00:00",
+    "updatedAt": "2026-08-26T12:38:36.082383+00:00",
+    "incident": {
+      "incidentId": "INC-12",
+      "title": "Production PostgreSQL database unavailable",
+      "service": "Incident",
+      "severity": "urgent",
+      "environment": "unknown",
+      "symptoms": [
+        "ReSolve infrastructure monitoring detected that the production PostgreSQL database is not running. The backend service remains available, but database-dependent requests are failing and the API health check is degraded. Database connectivity has been lost and automated recovery analysis is required."
+      ],
+      "errorCodes": [],
+      "description": ""
+    },
+    "errorSignature": "CONNECTION_REFUSED",
+    "status": "RECOVERED",
+    "reason": null,
+    "recoveryAttempts": 1,
+    "attempts": [
+      {
+        "attemptNumber": 1,
+        "action": "Retry database connection",
+        "result": "failed",
+        "errorSignature": "CONNECTION_REFUSED",
+        "note": "Initial host agent action failed before recovery memory was consulted."
+      },
+      {
+        "attemptNumber": 2,
+        "action": "Restart PostgreSQL database",
+        "result": "pending-approval",
+        "errorSignature": "CONNECTION_REFUSED",
+        "note": "Medium risk strategy requires human approval.",
+        "riskTier": "medium",
+        "approval": {
+          "approved": false,
+          "status": "approval-required"
+        },
+        "sourceIncident": "RUNBOOK-DB-RESTART-001",
+        "score": 0.8833333333333333
+      },
+      {
+        "attemptNumber": 3,
+        "action": "Restart PostgreSQL database",
+        "result": "success",
+        "errorSignature": "CONNECTION_REFUSED",
+        "note": "Recovery verified successfully.",
+        "riskTier": "medium",
+        "approval": {
+          "approved": true,
+          "status": "human-approved"
+        },
+        "sourceIncident": "RUNBOOK-DB-RESTART-001",
+        "score": 0.8833333333333333,
+        "execution": {
+          "action": "Restart PostgreSQL database",
+          "capability": "restart_database",
+          "executionStatus": "success",
+          "message": "Approved database container 'resolve-demo-db' was started.",
+          "beforeState": {
+            "databaseRunning": false,
+            "backendRunning": true,
+            "apiHealthy": false,
+            "cacheHealthy": true,
+            "connectionPoolHealthy": false,
+            "replicaHealthy": false,
+            "configurationHealthy": false,
+            "credentialsHealthy": true,
+            "errorSignature": "unknown"
+          },
+          "state": {
+            "databaseRunning": true,
+            "backendRunning": true,
+            "apiHealthy": true,
+            "cacheHealthy": true,
+            "connectionPoolHealthy": true,
+            "replicaHealthy": false,
+            "configurationHealthy": false,
+            "credentialsHealthy": true,
+            "errorSignature": "unknown"
+          }
+        },
+        "verification": {
+          "status": "VERIFIED",
+          "recovered": true,
+          "errorSignature": "CONNECTION_REFUSED",
+          "checks": [
+            {
+              "name": "databaseRunning",
+              "expected": true,
+              "actual": true,
+              "passed": true
+            },
+            {
+              "name": "connectionPoolHealthy",
+              "expected": true,
+              "actual": true,
+              "passed": true
+            }
+          ],
+          "message": "Recovery verified successfully."
+        }
+      }
+    ],
+    "finalEnvironmentState": {
+      "databaseRunning": true,
+      "backendRunning": true,
+      "apiHealthy": true,
+      "cacheHealthy": true,
+      "connectionPoolHealthy": true,
+      "replicaHealthy": false,
+      "configurationHealthy": false,
+      "credentialsHealthy": true,
+      "errorSignature": "unknown"
+    }
   }
 ]
